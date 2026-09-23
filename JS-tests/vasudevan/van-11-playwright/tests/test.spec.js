@@ -5,7 +5,7 @@ const USERNAME = "ohrmuser";
 const PASSWORD = "Vasu31.7.4";
 
 
-    const browser = await chromium.launch({ headless: false });
+    const browser = await chromium.launch({ headless: True });
     const page = await browser.newPage();
 
     const employee_id = "EMP" + Math.floor(1000 + Math.random() * 9000);
@@ -41,10 +41,7 @@ const PASSWORD = "Vasu31.7.4";
 
     await employee_id_input.fill(employee_id);
 
-    await page.locator('input[type="file"]').setInputFiles(
-        "playwright/JS-tests/vasudevan/van-11-playwright/images
-/kohli.jpg"
-    );
+    await page.locator('input[type="file"]').setInputFiles("images/kohli.jpg");
 
     await page.getByRole("button", { name: "Save" }).click();
 
