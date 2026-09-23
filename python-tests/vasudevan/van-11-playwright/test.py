@@ -49,7 +49,8 @@ with sync_playwright() as p:
 )
     employee_id_input.fill(employee_id)
 
-    page.locator('input[type="file"]').set_input_files("V:/playwright/tests/Toolshop/kohli.jpg")
+    page.locator('input[type="file"]').set_input_files("playwright/python-tests/vasudevan/van-11-playwright/images
+/kohli.jpg")
     page.get_by_role("button", name="Save").click()
 
     # 4. Verify the employee is created successfully
