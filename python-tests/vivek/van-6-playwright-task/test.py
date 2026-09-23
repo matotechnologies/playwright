@@ -1,3 +1,4 @@
+import os
 from playwright.sync_api import sync_playwright, expect
 
 
@@ -11,7 +12,7 @@ def test_update_employee_job_details():
     with sync_playwright() as p:
 
         # 1. Open OrangeHRM
-        browser = p.chromium.launch(headless=False)
+        browser = p.chromium.launch(headless=os.getenv("CI") != "true")
         page = browser.new_page()
 
         page.goto(BASE_URL)
