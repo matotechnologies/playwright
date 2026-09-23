@@ -4,7 +4,7 @@ from playwright.sync_api import sync_playwright, expect
 
 BASE_URL = "http://localhost:4201"
 USERNAME = "Admin"
-PASSWORD = "Admin@123098"
+PASSWORD = "admin123"
 
 
 def test_update_employee_job_details():
