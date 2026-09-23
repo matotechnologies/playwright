@@ -1,24 +1,21 @@
 import random
-
+from pathlib import Path
 from playwright.sync_api import expect, sync_playwright
 
-
-BASE_URL = "http://localhost:8080"
-
+BASE_URL = "http://localhost:4201";
 USERNAME = "venom"
 PASSWORD = "Deepak*123"
+IMAGE_PATH = Path(__file__).parent / "images" / "PNG1.jpg"
 
 
 with sync_playwright() as playwright:
 
     browser = playwright.chromium.launch(headless=False)
     page = browser.new_page()
-
     employee_id = "EMP" + str(random.randint(1000, 9999))
     first_name = "Arun"
     last_name = "Deepak"
 
-    
     page.goto(BASE_URL)
 
     page.get_by_placeholder("Username").fill(USERNAME)
@@ -31,7 +28,6 @@ with sync_playwright() as playwright:
 
     print("Login successful")
 
-    
     page.get_by_role("link", name="PIM").click()
 
     page.get_by_role("link", name="Add Employee").click()
@@ -40,7 +36,6 @@ with sync_playwright() as playwright:
 
     print("Add Employee page opened")
 
-    
     page.get_by_placeholder("First Name").fill(first_name)
 
     page.get_by_placeholder("Last Name").fill(last_name)
@@ -49,8 +44,7 @@ with sync_playwright() as playwright:
 
     employee_id_input.fill(employee_id)
 
-    
-    page.locator('input[type="file"]').set_input_files(r"D:\PlayWright\images\PNG1.jpg")
+    page.locator('input[type="file"]').set_input_files(IMAGE_PATH)
 
     page.get_by_role("button", name="Save").click()
 
@@ -64,14 +58,12 @@ with sync_playwright() as playwright:
 
     print("Employee List opened")
 
-    
     employee_id_search = (page.locator(".oxd-input-group").filter(has_text="Employee Id").locator("input"))
 
     employee_id_search.fill(employee_id)
 
     page.get_by_role("button", name="Search").click()
 
-    
     expect(page.get_by_text(employee_id, exact=True)).to_be_visible()
 
     print("Employee found using Employee ID")
@@ -84,13 +76,11 @@ with sync_playwright() as playwright:
 
     print("Employee details verified")
 
-    
     page.get_by_role("link", name="PIM").click()
 
     page.get_by_role("link", name="Add Employee").click()
 
     expect(page.get_by_role("heading", name="Add Employee")).to_be_visible()
-
 
     page.get_by_placeholder("First Name").fill("Duplicate")
 
@@ -102,22 +92,18 @@ with sync_playwright() as playwright:
 
     page.get_by_role("button", name="Save").click()
 
-    expect(page.get_by_text("Employee Id already exists",exact=False)).to_be_visible()
+    expect(page.get_by_text("Employee Id already exists", exact=False)).to_be_visible()
 
     print("Duplicate Employee ID rejected")
-
 
     page.get_by_text("Employee List", exact=True).click()
 
     expect(page.get_by_role("heading", name="Employee Information")).to_be_visible()
 
-
     employee_id_search = (page.locator(".oxd-input-group").filter(has_text="Employee Id").locator("input"))
 
     employee_id_search.fill(employee_id)
-
     page.get_by_role("button", name="Search").click()
-
 
     employee_row = page.locator(".oxd-table-row").filter(has_text=employee_id)
 
@@ -129,16 +115,13 @@ with sync_playwright() as playwright:
 
     print("Employee details verified before refresh")
 
-
     page.reload()
-
 
     employee_id_search = (page.locator(".oxd-input-group").filter(has_text="Employee Id").locator("input"))
 
     employee_id_search.fill(employee_id)
 
     page.get_by_role("button", name="Search").click()
-    
 
     employee_row = page.locator(".oxd-table-row").filter(has_text=employee_id)
 
@@ -151,3 +134,4 @@ with sync_playwright() as playwright:
     print("Employee details persist after refresh")
 
     browser.close()
+

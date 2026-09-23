@@ -1,8 +1,7 @@
 
 import { test, expect } from '@playwright/test';
 
-const BASE_URL = 'http://localhost:8080';
-
+const BASE_URL = "http://localhost:4201";
 const USERNAME = 'venom';
 const PASSWORD = 'Deepak*123';
 
@@ -24,7 +23,6 @@ test('Create and verify employee', async ({ page }) => {
 
     console.log('Login successful');
 
-    
     await page.getByRole('link', { name: 'PIM' }).click();
 
     await page.getByRole('link', { name: 'Add Employee' }).click();
@@ -33,7 +31,6 @@ test('Create and verify employee', async ({ page }) => {
 
     console.log('Add Employee page opened');
 
-    
     await page.getByPlaceholder('First Name').fill(firstName);
 
     await page.getByPlaceholder('Last Name').fill(lastName);
@@ -42,7 +39,7 @@ test('Create and verify employee', async ({ page }) => {
 
     await employeeIdInput.fill(employeeId);
 
-    await page.locator('input[type="file"]').setInputFiles('D:\\PlayWright\\images\\PNG1.jpg');
+    await page.locator('input[type="file"]').setInputFiles('images/PNG1.jpg');
 
     await page.getByRole('button', { name: 'Save' }).click();
 
@@ -50,13 +47,11 @@ test('Create and verify employee', async ({ page }) => {
 
     console.log('Employee created successfully');
 
-    
     await page.getByText('Employee List', { exact: true }).click();
 
     await expect(page.getByRole('heading', { name: 'Employee Information' })).toBeVisible();
 
     console.log('Employee List opened');
-
 
     const employeeIdSearch = page.locator('.oxd-input-group').filter({ hasText: 'Employee Id' }).locator('input');
 
@@ -68,7 +63,6 @@ test('Create and verify employee', async ({ page }) => {
 
     console.log('Employee found using Employee ID');
 
-    
     const employeeRow = page.locator('.oxd-table-row').filter({ hasText: employeeId });
 
     await expect(employeeRow.getByText(firstName, { exact: true })).toBeVisible();
@@ -77,7 +71,6 @@ test('Create and verify employee', async ({ page }) => {
 
     console.log('Employee details verified');
 
-    
     await page.getByRole('link', { name: 'PIM' }).click();
 
     await page.getByRole('link', { name: 'Add Employee' }).click();
@@ -98,7 +91,6 @@ test('Create and verify employee', async ({ page }) => {
 
     console.log('Duplicate Employee ID rejected');
 
-    
     await page.getByText('Employee List', { exact: true }).click();
 
     await expect(page.getByRole('heading', { name: 'Employee Information' })).toBeVisible();
@@ -119,7 +111,6 @@ test('Create and verify employee', async ({ page }) => {
 
     console.log('Employee details verified before refresh');
 
-    
     await page.reload();
 
     const employeeIdSearchAfterRefresh = page.locator('.oxd-input-group').filter({ hasText: 'Employee Id' }).locator('input');
