@@ -5,7 +5,7 @@ const USERNAME = 'Admin';
 const PASSWORD = 'Admin@123098'; 
 
 test('Update employee job details', async ({ page }) => {
-    // 1. Open Login route directly
+    
     await page.goto(`${BASE_URL}/web/index.php/auth/login`, { waitUntil: 'networkidle' });
 
     // 2. Complete Login (with submit button click)
