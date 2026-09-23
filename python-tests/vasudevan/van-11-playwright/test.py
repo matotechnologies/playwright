@@ -11,7 +11,7 @@ PASSWORD = "Vasu31.7.4"
 
 with sync_playwright() as p:
 
-    browser = p.chromium.launch(headless=False)
+    browser = p.chromium.launch(headless=True)
     page = browser.new_page()
 
     employee_id = "EMP" + str(random.randint(1000, 9999))
@@ -49,8 +49,7 @@ with sync_playwright() as p:
 )
     employee_id_input.fill(employee_id)
 
-    page.locator('input[type="file"]').set_input_files("playwright/python-tests/vasudevan/van-11-playwright/images
-/kohli.jpg")
+    page.locator('input[type="file"]').set_input_files("images/kohli.jpg")
     page.get_by_role("button", name="Save").click()
 
     # 4. Verify the employee is created successfully
