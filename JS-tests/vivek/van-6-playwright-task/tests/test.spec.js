@@ -12,7 +12,6 @@ test('Update employee job details', async ({ page }) => {
     // 2. Login to OrangeHRM
     await page.getByPlaceholder('Username').fill(USERNAME);
     await page.getByPlaceholder('Password').fill(PASSWORD);
-    await page.getByRole('button', { name: 'Login' }).click({ noWaitAfter: true });
 
     // 3. Navigate to PIM
     await page.getByRole('link', { name: 'PIM' }).click();
