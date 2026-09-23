@@ -22,6 +22,7 @@ with sync_playwright() as p:
 
     # 1. Login to OrangeHRM
     page.goto(BASE_URL)
+    expect(page.get_by_placeholder("Username")).to_be_visible(timeout=60000)
 
     page.get_by_placeholder("Username").fill("ohrmuser")
     page.get_by_placeholder("Password").fill("Vasu31.7.4")
