@@ -18,6 +18,7 @@ def test_update_employee_job_details():
         page.goto(BASE_URL)
 
         # 2. Login to OrangeHRM
+        page.get_by_placeholder("Username").wait_for(state="visible")
         page.get_by_placeholder("Username").fill(USERNAME)
         page.get_by_placeholder("Password").fill(PASSWORD)
         page.get_by_role("button", name="Login").click()
