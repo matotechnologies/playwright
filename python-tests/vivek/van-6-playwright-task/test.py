@@ -26,9 +26,6 @@ def test_update_employee_job_details():
         # 3. Navigate to PIM
         page.get_by_role("link", name="PIM").click()
 
-        # 4. Navigate to Employee List
-        page.get_by_role("link", name="Employee List").click()
-
         # 5. Search for employee using Employee ID
         page.locator("input").nth(1).fill("0001")
 
@@ -67,21 +64,15 @@ def test_update_employee_job_details():
         expect(page.get_by_text("Successfully Updated")).to_be_visible()
 
         # 15. Verify job details are displayed
-        expect(page.locator(".oxd-select-text").nth(0)).not_to_have_text("")
-        expect(page.locator(".oxd-select-text").nth(1)).not_to_have_text("")
-        expect(page.locator(".oxd-select-text").nth(2)).not_to_have_text("")
-        expect(page.locator(".oxd-select-text").nth(3)).not_to_have_text("")
-        expect(page.locator(".oxd-select-text").nth(4)).not_to_have_text("")
+        for i in range(5):
+            expect(page.locator(".oxd-select-text").nth(i)).not_to_have_text("")
 
         # 16. Refresh the page
         page.reload()
 
         # 17. Verify job details persist after refresh
-        expect(page.locator(".oxd-select-text").nth(0)).not_to_have_text("")
-        expect(page.locator(".oxd-select-text").nth(1)).not_to_have_text("")
-        expect(page.locator(".oxd-select-text").nth(2)).not_to_have_text("")
-        expect(page.locator(".oxd-select-text").nth(3)).not_to_have_text("")
-        expect(page.locator(".oxd-select-text").nth(4)).not_to_have_text("")
+        for i in range(5):
+            expect(page.locator(".oxd-select-text").nth(i)).not_to_have_text("")
 
         browser.close()
 
