@@ -6,7 +6,7 @@ BASE_URL = "http://localhost:4200"
 def test_toolshop_cart_checkout():
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False)
+        browser = p.chromium.launch(headless=os.getenv("CI") == "true")
         page = browser.new_page()
 
         # 1. Open Toolshop locally
