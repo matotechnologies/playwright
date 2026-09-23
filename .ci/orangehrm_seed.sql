@@ -1928,7 +1928,7 @@ CREATE TABLE `ohrm_employment_status` (
   `id` int NOT NULL AUTO_INCREMENT,
   `name` varchar(60) NOT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb3;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1937,6 +1937,7 @@ CREATE TABLE `ohrm_employment_status` (
 
 LOCK TABLES `ohrm_employment_status` WRITE;
 /*!40000 ALTER TABLE `ohrm_employment_status` DISABLE KEYS */;
+INSERT INTO `ohrm_employment_status` VALUES (1,'Full-Time Permanent');
 /*!40000 ALTER TABLE `ohrm_employment_status` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -2614,7 +2615,7 @@ CREATE TABLE `ohrm_job_title` (
   `note` varchar(400) DEFAULT NULL,
   `is_deleted` tinyint(1) DEFAULT '0',
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb3;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -2623,6 +2624,7 @@ CREATE TABLE `ohrm_job_title` (
 
 LOCK TABLES `ohrm_job_title` WRITE;
 /*!40000 ALTER TABLE `ohrm_job_title` DISABLE KEYS */;
+INSERT INTO `ohrm_job_title` VALUES (1,'Software Engineer',NULL,NULL,0);
 /*!40000 ALTER TABLE `ohrm_job_title` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -3149,7 +3151,7 @@ CREATE TABLE `ohrm_login` (
   `user_role_predefined` tinyint(1) NOT NULL,
   `login_time` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb3;
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb3;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -3158,7 +3160,7 @@ CREATE TABLE `ohrm_login` (
 
 LOCK TABLES `ohrm_login` WRITE;
 /*!40000 ALTER TABLE `ohrm_login` DISABLE KEYS */;
-INSERT INTO `ohrm_login` VALUES (1,1,'Admin','Admin',1,'2026-09-23 17:34:21'),(2,1,'Admin','Admin',1,'2026-09-23 17:40:00');
+INSERT INTO `ohrm_login` VALUES (1,1,'Admin','Admin',1,'2026-09-23 17:34:21'),(2,1,'Admin','Admin',1,'2026-09-23 17:40:00'),(3,1,'Admin','Admin',1,'2026-09-23 18:36:16');
 /*!40000 ALTER TABLE `ohrm_login` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -5086,4 +5088,4 @@ UNLOCK TABLES;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-09-23 17:55:16
+-- Dump completed on 2026-09-23 18:39:50
