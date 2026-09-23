@@ -156,11 +156,17 @@ jobs:
         run: |
           docker network create orangehrm-net || true
 
-          # Create directory if missing so the volume mount doesn't fail
-          mkdir -p .ci
-          touch .ci/orangehrm_seed.sql
+          # 1. Validate required seed and configuration files
+          if [ ! -s ".ci/orangehrm_seed.sql" ]; then
+            echo "::error::.ci/orangehrm_seed.sql is missing or empty! Make sure you exported the database and committed it."
+            exit 1
+          fi
+          if [ ! -s ".ci/Conf.php" ]; then
+            echo "::error::.ci/Conf.php is missing or empty! Run 'docker cp orangehrm-app:/var/www/html/lib/confs/Conf.php .ci/Conf.php' locally and commit it."
+            exit 1
+          fi
 
-          # Start MySQL 8.0 with native password plugin and seed directory mount
+          # 2. Start MySQL 8.0 with mounted seed file
           docker run -d --name orangehrm-db \
             --network orangehrm-net \
             --restart unless-stopped \
@@ -172,23 +178,23 @@ jobs:
             mysql:8.0 \
             --default-authentication-plugin=mysql_native_password
 
-          echo "Waiting for MySQL 8.0 to initialize..."
-          for i in {1..30}; do
+          echo "Waiting for MySQL 8.0 initialization and database import..."
+          for i in {1..40}; do
             if docker exec orangehrm-db mysqladmin ping -h localhost -uroot -prootpass --silent; then
-              echo "MySQL database is accepting connections."
-              break
+              if docker exec orangehrm-db mysql -uroot -prootpass -e "USE orangehrm;" 2>/dev/null; then
+                echo "MySQL database is accepting connections and tables are initialized."
+                break
+              fi
             fi
             sleep 2
           done
 
+          # 3. Start OrangeHRM App with mounted Conf.php
           docker run -d --name orangehrm-app \
             --network orangehrm-net \
             --restart unless-stopped \
             -p 4201:80 \
-            -e ORANGEHRM_DATABASE_HOST=orangehrm-db \
-            -e ORANGEHRM_DATABASE_NAME=orangehrm \
-            -e ORANGEHRM_DATABASE_USER=orangehrm \
-            -e ORANGEHRM_DATABASE_PASSWORD=orangehrmpass \
+            -v ${{ github.workspace }}/.ci/Conf.php:/var/www/html/lib/confs/Conf.php \
             orangehrm/orangehrm:latest
 
       - name: Wait for OrangeHRM Readiness (port 4201)
@@ -196,15 +202,14 @@ jobs:
         run: |
           echo "Waiting for OrangeHRM Login Page..."
           ORANGE_READY=false
-          for i in {1..60}; do
-            # -L follows the 302 redirect directly to /web/index.php/auth/login and requires 200
+          for i in {1..40}; do
             STATUS=$(curl -s -L -o /dev/null -w "%{http_code}" http://localhost:4201/web/index.php/auth/login || echo "000")
             if [ "$STATUS" = "200" ]; then
               echo "OrangeHRM login page is live and responsive (HTTP 200)."
               ORANGE_READY=true
               break
             fi
-            echo "OrangeHRM is starting up... attempt $i/60 (HTTP $STATUS)"
+            echo "OrangeHRM is starting up... attempt $i/40 (HTTP $STATUS)"
             sleep 5
           done
 
@@ -212,6 +217,8 @@ jobs:
             echo "OrangeHRM failed to boot. Container logs:"
             docker logs --tail=100 orangehrm-app
             docker logs --tail=50 orangehrm-db
+            echo "--- Apache/PHP Error Log ---"
+            docker exec orangehrm-app cat /var/log/apache2/error.log 2>/dev/null || true
             exit 1
           fi
 
