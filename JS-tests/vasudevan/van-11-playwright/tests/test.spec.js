@@ -42,7 +42,8 @@ const PASSWORD = "Vasu31.7.4";
     await employee_id_input.fill(employee_id);
 
     await page.locator('input[type="file"]').setInputFiles(
-        "V:/playwright/tests/Toolshop/kohli.jpg"
+        "playwright/JS-tests/vasudevan/van-11-playwright/images
+/kohli.jpg"
     );
 
     await page.getByRole("button", { name: "Save" }).click();
