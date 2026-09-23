@@ -16,6 +16,9 @@ def test_update_employee_job_details():
         page = browser.new_page()
 
         page.goto(BASE_URL)
+        print("Current URL:", page.url)
+        print("Page title:", page.title())
+        print("Page content:", page.locator("body").inner_text())
 
         # 2. Login to OrangeHRM
         page.get_by_placeholder("Username").wait_for(state="visible")
