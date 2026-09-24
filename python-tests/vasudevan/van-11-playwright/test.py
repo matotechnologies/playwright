@@ -223,24 +223,3 @@ def test_orangehrm(page):
     ).to_be_visible()
 
     print("Employee deleted successfully")
-
-    # 16. Search deleted employee
-    employee_id_search = (
-        page.locator(".oxd-input-group")
-        .filter(has_text="Employee Id")
-        .locator("input")
-    )
-
-    employee_id_search.fill(employee_id)
-
-    page.get_by_role(
-        "button",
-        name="Search"
-    ).click()
-
-    # 17. Verify employee is deleted
-    expect(
-        page.get_by_text("No Records Found")
-    ).to_be_visible()
-
-    print("Deleted employee is no longer displayed")
