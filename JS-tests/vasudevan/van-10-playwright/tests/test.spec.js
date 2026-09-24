@@ -1,113 +1,180 @@
-import { test, expect } from '@playwright/test';
+
+import { test, expect } from "@playwright/test";
 
 const BASE_URL = "http://localhost:4200/";
 
-for (const browserName of ["chromium", "firefox", "webkit"]) {
-    test(`ecommerce - ${browserName}`, async ({ playwright }) => {
-        const browser = await playwright[browserName].launch({ headless: false });
-        const page = await browser.newPage();
+test("ecommerce", async ({ page }) => {
+
+    await page.goto(BASE_URL);
+
+    await page.getByPlaceholder("Search").fill("Hammer");
+    await page.locator('[data-test="search-submit"]').click();
+
+    const products = page.locator('[data-test="product-name"]');
+    await expect(products.first()).toBeVisible();
+
+    console.log("Search results:", await products.allTextContents());
+
+    await page.goto(BASE_URL);
+
+    const slider = page.locator('[aria-label="ngx-slider-max"]');
+    await slider.click();
+    await slider.press("Home");
+
+    for (let i = 0; i < 18; i++) {
+        await slider.press("ArrowRight");
+    }
+
+    const sort = page.locator('[data-test="sort"]');
+
+    if (await sort.count() > 0) {
+        await sort.selectOption("price,asc");
+
+        const prices = await page.locator(
+            '[data-test="product-price"]'
+        ).allTextContents();
+
+        const priceValues = prices.map(price =>
+            parseFloat(price.replace(/[^\d.]/g, ""))
+        );
+
+        expect(priceValues).toEqual([...priceValues].sort((a, b) => a - b));
+
+        console.log("Products sorted by price");
+    }
+
+    const productNames = [
+        "Hammer",
+        "Bolt Cutters",
+        "Slip Joint Pliers"
+    ];
+
+    for (const product of productNames) {
 
         await page.goto(BASE_URL);
 
-        await page.getByPlaceholder("Search").fill("Hammer");
-        await page.locator('[data-test="search-submit"]').click();
+        await page.locator(`img[alt="${product}"]`).click();
 
-        const products = page.locator('[data-test="product-name"]');
-        await expect(products.first()).toBeVisible();
-        console.log("Search results:", await products.allTextContents());
+        await expect(
+            page.locator('[data-test="product-name"]')
+        ).toBeVisible();
 
-        await page.goto(BASE_URL);
+        await expect(
+            page.locator('[data-test="unit-price"]')
+        ).toBeVisible();
 
-        const slider = page.locator('[aria-label="ngx-slider-max"]');
-        await slider.click();
-        await slider.press("Home");
+        const productName = await page.locator(
+            '[data-test="product-name"]'
+        ).innerText();
 
-        for (let i = 0; i < 18; i++) {
-            await slider.press("ArrowRight");
-        }
+        const productPrice = await page.locator(
+            '[data-test="unit-price"]'
+        ).innerText();
 
-        const sort = page.locator('[data-test="sort"]');
+        expect(productName).toBe(product);
 
-        if (await sort.count() > 0) {
-            await sort.selectOption("price,asc");
+        console.log("Product:", productName);
+        console.log("Price:", productPrice);
 
-            const prices = await page.locator('[data-test="product-price"]').allTextContents();
-            const priceValues = prices.map(price => parseFloat(price.replace(/[^\d.]/g, "")));
+        await page.getByRole("button", {
+            name: "Add to Cart"
+        }).click();
 
-            expect(priceValues).toEqual([...priceValues].sort((a, b) => a - b));
-            console.log("Products sorted by price");
-        }
+        await expect(
+            page.getByText("Product added to Shopping cart")
+        ).toBeVisible();
+    }
 
-        const productNames = ["Hammer", "Bolt Cutters", "Slip Joint Pliers"];
+    await page.locator('[data-test="nav-cart"]').click();
 
-        for (const product of productNames) {
-            await page.goto(BASE_URL);
+    const cartProducts = page.locator('[data-test="product-title"]');
 
-            await page.locator(`img[alt="${product}"]`).click();
+    console.log(
+        "Cart products:",
+        await cartProducts.allTextContents()
+    );
 
-            await expect(page.locator('[data-test="product-name"]')).toBeVisible();
-            await expect(page.locator('[data-test="unit-price"]')).toBeVisible();
+    const quantity = page.locator(
+        'input[data-test="product-quantity"]'
+    ).first();
 
-            const productName = await page.locator('[data-test="product-name"]').innerText();
-            const productPrice = await page.locator('[data-test="unit-price"]').innerText();
+    await quantity.fill("3");
 
-            expect(productName).toBe(product);
+    expect(await quantity.inputValue()).toBe("3");
 
-            console.log("Product:", productName);
-            console.log("Price:", productPrice);
+    console.log(
+        "Updated quantity:",
+        await quantity.inputValue()
+    );
 
-            await page.getByRole("button", { name: "Add to Cart" }).click();
-            await page.waitForTimeout(1000);
-        }
+    const buttons = page.locator(
+        'a[class="btn btn-danger"]'
+    );
 
-        await page.locator('[data-test="nav-cart"]').click();
+    await buttons.nth(1).click();
 
-        const cartProducts = page.locator('[data-test="product-title"]');
-        console.log("Cart products:", await cartProducts.allTextContents());
+    console.log("Product removed successfully");
 
-        const quantity = page.locator('input[data-test="product-quantity"]').first();
-        await quantity.fill("3");
+    await page.getByRole("button", {
+        name: "Proceed to checkout"
+    }).click();
 
-        await expect(quantity).toHaveValue("3");
-        console.log("Updated quantity:", await quantity.inputValue());
+    await page.getByRole("tab", {
+        name: "Continue as Guest"
+    }).click();
 
-        const buttons = page.locator('a[class="btn btn-danger"]');
-        await buttons.nth(1).click();
-        await buttons.nth(1).click();
+    await page.locator("#guest-email")
+        .fill("customer@example.com");
 
-        console.log("Product removed successfully");
+    await page.getByPlaceholder("Your first name")
+        .fill("vasu");
 
-        await page.getByRole("button", { name: "Proceed to checkout" }).click();
+    await page.getByPlaceholder("Your last name")
+        .fill("dev");
 
-        await page.getByRole("tab", { name: "Continue as Guest" }).click();
+    await page.getByRole("button", {
+        name: "Continue as Guest"
+    }).click();
 
-        await page.get_by_placeholder("Your email").fill("customer@example.com");
-        await page.get_by_placeholder("Your first name").fill("vasu");
-        await page.get_by_placeholder("Your last name").fill("dev");
+    await page.getByRole("button", {
+        name: "Proceed to checkout"
+    }).click();
 
-        await page.getByRole("button", { name: "Continue as Guest" }).click();
+    await page.locator("#country")
+        .selectOption("IN");
 
-        await page.getByRole("button", { name: "Proceed to checkout" }).click();
+    await page.getByPlaceholder("Your Postcode *")
+        .fill("123456");
 
-        await page.locator("#country").selectOption("IN");
-        await page.get_by_placeholder("Your Postcode *").fill("123456");
-        await page.get_by_placeholder("e.g. 42 *").fill("33");
-        await page.get_by_placeholder("Your Street *").fill("matha street");
-        await page.get_by_placeholder("Your City *").fill("madurai");
-        await page.get_by_placeholder("State *").fill("tamilnadu");
+    await page.getByPlaceholder("e.g. 42 *")
+        .fill("33");
 
-        await page.getByRole("button", { name: "Proceed to checkout" }).click();
+    await page.getByPlaceholder("Your Street *")
+        .fill("matha street");
 
-        await page.locator('[data-test="payment-method"]').selectOption("Cash on Delivery");
+    await page.getByPlaceholder("Your City *")
+        .fill("madurai");
 
-        await page.getByRole("button", { name: "Confirm" }).click();
+    await page.getByPlaceholder("State *")
+        .fill("tamilnadu");
 
-        const message = await page.locator('[data-test="payment-success-message"]').innerText();
+    await page.getByRole("button", {
+        name: "Proceed to checkout"
+    }).click();
 
-        console.log(message);
+    await page.locator('[data-test="payment-method"]')
+        .selectOption("Cash on Delivery");
 
-        expect(message).toBe("Payment was successful");
+    await page.getByRole("button", {
+        name: "Confirm"
+    }).click();
 
-        await browser.close();
-    });
-}
+    const message = await page.locator(
+        '[data-test="payment-success-message"]'
+    ).innerText();
+
+    console.log(message);
+
+    expect(message).toBe("Payment was successful");
+});
+
