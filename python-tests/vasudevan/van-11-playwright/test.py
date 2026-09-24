@@ -3,7 +3,6 @@ import random
 from playwright.sync_api import Page, expect, sync_playwright
 import pytest
 
-
 BASE_URL = "http://localhost:4201/web/index.php/auth/login"
 USERNAME = "Admin"
 PASSWORD = "Admin@123098"
