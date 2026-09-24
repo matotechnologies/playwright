@@ -1,11 +1,15 @@
 import { test, expect } from '@playwright/test';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const BASE_URL = "http://localhost:4201/web/index.php/auth/login";
 const USERNAME = 'Admin';
 const PASSWORD = 'Admin@123098';
 
 test('Create and verify employee', async ({ page }) => {
-
     const employeeId = 'EMP' + Math.floor(1000 + Math.random() * 9000);
     const firstName = 'Arun';
     const lastName = 'Deepak';
@@ -38,7 +42,7 @@ test('Create and verify employee', async ({ page }) => {
 
     await employeeIdInput.fill(employeeId);
 
-    await page.locator('input[type="file"]').setInputFiles('images/PNG1.jpg');
+    await page.locator('input[type="file"]').setInputFiles(path.join(__dirname, '../images/PNG1.jpg'));
 
     await page.getByRole('button', { name: 'Save' }).click();
 
@@ -128,4 +132,3 @@ test('Create and verify employee', async ({ page }) => {
 
     console.log('Employee details persist after refresh');
 });
-

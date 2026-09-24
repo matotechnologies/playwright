@@ -1,6 +1,8 @@
+
 {
   "name": "van-12-playwright",
   "version": "1.0.0",
+  "type": "module",
   "scripts": {
     "test": "playwright test"
   },
