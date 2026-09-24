@@ -5,8 +5,8 @@ BASE_URL = "http://localhost:4200"
 
 
 def wait_for_products_loaded(page: Page):
+    
     first_title = page.locator(".card-title").first
-    # Uses Playwright's default 5s assertion timeout
     expect(first_title).to_be_visible()
     expect(first_title).not_to_have_text("")
 
@@ -57,12 +57,17 @@ def test_apply_sorting(page: Page):
     page.goto(BASE_URL)
     wait_for_products_loaded(page)
 
-    # Replaced wait_for_function .
+    
+    initial_first_title = page.locator(".card-title").first.inner_text().strip()
+
     with page.expect_response(lambda r: "/products" in r.url and r.status == 200):
         page.select_option('[data-test="sort"]', value="name,asc")
 
-    wait_for_products_loaded(page)
 
+    first_card = page.locator(".card-title").first
+    expect(first_card).not_to_have_text(initial_first_title)
+
+  
     product_names = [p.strip() for p in page.locator(".card-title").all_inner_texts() if p.strip()]
     assert len(product_names) > 0, "No products displayed after sorting"
     assert product_names == sorted(product_names, key=str.casefold), "Products are not sorted alphabetically (A-Z)"
