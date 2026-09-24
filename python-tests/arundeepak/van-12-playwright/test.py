@@ -3,14 +3,13 @@ from pathlib import Path
 from playwright.sync_api import expect, sync_playwright
 
 BASE_URL = "http://localhost:4201";
-USERNAME = "venom"
-PASSWORD = "Deepak*123"
+USERNAME = "Admin"
+PASSWORD = "Admin@123098"
 IMAGE_PATH = Path(__file__).parent / "images" / "PNG1.jpg"
-
 
 with sync_playwright() as playwright:
 
-    browser = playwright.chromium.launch(headless=False)
+    browser = playwright.chromium.launch(headless=True)
     page = browser.new_page()
     employee_id = "EMP" + str(random.randint(1000, 9999))
     first_name = "Arun"
@@ -134,4 +133,3 @@ with sync_playwright() as playwright:
     print("Employee details persist after refresh")
 
     browser.close()
-

@@ -4,7 +4,7 @@ export default defineConfig({
     testDir: './tests',
 
     use: {
-        baseURL: 'http://localhost:8080',
+        baseURL: 'http://localhost:4201',
         headless: true,
         screenshot: 'only-on-failure',
         trace: 'on-first-retry'

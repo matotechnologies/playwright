@@ -1,9 +1,8 @@
-
 import { test, expect } from '@playwright/test';
 
 const BASE_URL = "http://localhost:4201";
-const USERNAME = 'venom';
-const PASSWORD = 'Deepak*123';
+const USERNAME = 'Admin';
+const PASSWORD = 'Admin@123098';
 
 test('Create and verify employee', async ({ page }) => {
 
