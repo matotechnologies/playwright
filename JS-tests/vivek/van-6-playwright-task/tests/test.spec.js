@@ -25,7 +25,7 @@ test('Update employee job category', async ({ page }) => {
     await page.getByRole('button', { name: 'Search' }).click();
 
     // 6. Open the employee profile
-    await page.getByRole('row', { name: '001' }).click();
+    await page.getByRole('row', { name: '001 Test Employee' }).click();
 
     // 7. Open the Job section
     await page.getByRole('link', { name: 'Job' }).click();
