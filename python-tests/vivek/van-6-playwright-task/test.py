@@ -42,23 +42,23 @@ def test_update_employee_job_details():
 
         # 8. Select Job Title
         page.locator(".oxd-select-text").nth(0).click()
-        page.get_by_role("option").nth(1).click()
+        page.locator(".oxd-select-option").nth(1).click()
 
         # 9. Select Employment Status
         page.locator(".oxd-select-text").nth(1).click()
-        page.get_by_role("option").nth(1).click()
+        page.locator(".oxd-select-option").nth(1).click()
 
         # 10. Select Job Category
         page.locator(".oxd-select-text").nth(2).click()
-        page.get_by_role("option").nth(1).click()
+        page.locator(".oxd-select-option").nth(1).click()
 
         # 11. Select Department
         page.locator(".oxd-select-text").nth(3).click()
-        page.get_by_role("option").nth(1).click()
+        page.locator(".oxd-select-option").nth(1).click()
 
         # 12. Select Location
         page.locator(".oxd-select-text").nth(4).click()
-        page.get_by_role("option").nth(1).click()
+        page.locator(".oxd-select-option").nth(1).click()
 
         # 13. Save the job details
         page.get_by_role("button", name="Save").click()
