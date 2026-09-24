@@ -5,12 +5,14 @@ on:
     paths:
       - 'python-tests/**'
       - 'JS-tests/**'
+      - '.ci/**'
   pull_request:
     branches:
       - main
     paths:
       - 'python-tests/**'
       - 'JS-tests/**'
+      - '.ci/**'
 
 jobs:
   test:
@@ -30,6 +32,7 @@ jobs:
       js_task_name: ${{ steps.detect.outputs.js_task_name }}
 
     steps:
+
       # ============================================================
       # CHECKOUT
       # ============================================================
@@ -38,6 +41,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
 
       # ============================================================
       # DETECT CHANGED TASK
@@ -52,24 +56,26 @@ jobs:
           if [ "${{ github.ref_name }}" = "main" ] && [ "${{ github.event_name }}" = "push" ]; then
             DIFF_BASE="HEAD~1 HEAD"
           else
-            git fetch origin main --quiet
             DIFF_BASE="origin/main...HEAD"
           fi
 
           echo "Diffing base: $DIFF_BASE"
 
-          # -----------------------------
-          # Python task
-          # -----------------------------
+          CHANGED_FILES=$(git diff --name-only $DIFF_BASE || true)
 
-          PY_TASK=$(
-            git diff --name-only $DIFF_BASE |
-            grep -iE '^python-tests/[^/]+/[^/]+' |
-            grep -v '\.gitkeep$' |
-            cut -d'/' -f1-3 |
-            sort -u |
-            head -n 1 || true
-          )
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+
+          # --------------------------------------------------------
+          # PYTHON
+          # --------------------------------------------------------
+
+          PY_TASK=$(echo "$CHANGED_FILES" \
+            | grep -iE '^python-tests/[^/]+/[^/]+' \
+            | grep -v '\.gitkeep$' \
+            | cut -d'/' -f1-3 \
+            | sort -u \
+            | head -n 1 || true)
 
           if [ -n "$PY_TASK" ] && [ -d "$PY_TASK" ]; then
             echo "has_python=true" >> "$GITHUB_OUTPUT"
@@ -77,29 +83,25 @@ jobs:
             echo "python_member=$(echo "$PY_TASK" | cut -d'/' -f2)" >> "$GITHUB_OUTPUT"
             echo "python_task_name=$(echo "$PY_TASK" | cut -d'/' -f3)" >> "$GITHUB_OUTPUT"
 
-            echo "Found Python task: $PY_TASK"
+            echo "Found Python task:"
+            echo "$PY_TASK"
           else
             echo "has_python=false" >> "$GITHUB_OUTPUT"
-            echo "python_task_dir=" >> "$GITHUB_OUTPUT"
-            echo "python_member=" >> "$GITHUB_OUTPUT"
-            echo "python_task_name=" >> "$GITHUB_OUTPUT"
-
             echo "No Python task detected."
           fi
 
-          # -----------------------------
-          # JavaScript task
-          # Supports JS-tests
-          # -----------------------------
 
-          JS_TASK=$(
-            git diff --name-only $DIFF_BASE |
-            grep -iE '^JS-tests/[^/]+/[^/]+' |
-            grep -v '\.gitkeep$' |
-            cut -d'/' -f1-3 |
-            sort -u |
-            head -n 1 || true
-          )
+          # --------------------------------------------------------
+          # JAVASCRIPT
+          # IMPORTANT: JS-tests is case-sensitive on Linux
+          # --------------------------------------------------------
+
+          JS_TASK=$(echo "$CHANGED_FILES" \
+            | grep -iE '^JS-tests/[^/]+/[^/]+' \
+            | grep -v '\.gitkeep$' \
+            | cut -d'/' -f1-3 \
+            | sort -u \
+            | head -n 1 || true)
 
           if [ -n "$JS_TASK" ] && [ -d "$JS_TASK" ]; then
             echo "has_js=true" >> "$GITHUB_OUTPUT"
@@ -107,27 +109,26 @@ jobs:
             echo "js_member=$(echo "$JS_TASK" | cut -d'/' -f2)" >> "$GITHUB_OUTPUT"
             echo "js_task_name=$(echo "$JS_TASK" | cut -d'/' -f3)" >> "$GITHUB_OUTPUT"
 
-            echo "Found JavaScript task: $JS_TASK"
+            echo "Found JavaScript task:"
+            echo "$JS_TASK"
           else
             echo "has_js=false" >> "$GITHUB_OUTPUT"
-            echo "js_task_dir=" >> "$GITHUB_OUTPUT"
-            echo "js_member=" >> "$GITHUB_OUTPUT"
-            echo "js_task_name=" >> "$GITHUB_OUTPUT"
-
             echo "No JavaScript task detected."
           fi
 
-          # -----------------------------
-          # Overall changes
-          # -----------------------------
+
+          # --------------------------------------------------------
+          # ANY VALID TASK
+          # --------------------------------------------------------
 
           if [ -n "$PY_TASK" ] || [ -n "$JS_TASK" ]; then
             echo "has_changes=true" >> "$GITHUB_OUTPUT"
-            echo "Valid Playwright task changes detected."
+            echo "At least one valid task was detected."
           else
             echo "has_changes=false" >> "$GITHUB_OUTPUT"
-            echo "No valid Playwright task changes detected."
+            echo "No valid task directory changes detected."
           fi
+
 
       # ============================================================
       # PYTHON ENVIRONMENT
@@ -139,6 +140,7 @@ jobs:
         with:
           python-version: '3.11'
 
+
       - name: Install Python dependencies
         if: steps.detect.outputs.has_python == 'true'
         shell: bash
@@ -147,15 +149,15 @@ jobs:
 
           cd "${{ steps.detect.outputs.python_task_dir }}"
 
+          echo "Installing Python dependencies..."
+
           python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-          if [ -f requirements.txt ]; then
-            pip install -r requirements.txt
-          fi
-
-          pip install pytest pytest-html pytest-playwright
+          echo "Installing Playwright Chromium..."
 
           playwright install --with-deps chromium
+
 
       # ============================================================
       # JAVASCRIPT ENVIRONMENT
@@ -166,8 +168,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: ${{ steps.detect.outputs.js_task_dir }}/package-lock.json
+
 
       - name: Install JS dependencies
         if: steps.detect.outputs.has_js == 'true'
@@ -177,13 +178,18 @@ jobs:
 
           cd "${{ steps.detect.outputs.js_task_dir }}"
 
+          echo "Installing JavaScript dependencies..."
+
           if [ -f package-lock.json ]; then
             npm ci
           else
             npm install
           fi
 
+          echo "Installing Playwright Chromium..."
+
           npx playwright install --with-deps chromium
+
 
       # ============================================================
       # START TOOLSHOP
@@ -195,26 +201,46 @@ jobs:
         run: |
           set -e
 
+          echo "Cloning Toolshop..."
+
           git clone https://github.com/testsmith-io/practice-software-testing.git
 
           cd practice-software-testing
 
+          echo "Starting Toolshop containers..."
+
           docker compose up -d
 
-          echo "Waiting for Toolshop database..."
+          echo "Waiting for MariaDB and executing database seeding..."
+
+          SEEDED=false
 
           for i in {1..30}; do
             if docker compose exec -T laravel-api php artisan migrate:fresh --seed; then
               echo "Toolshop database seeded successfully."
+              SEEDED=true
               break
             fi
 
-            echo "Database not ready. Retry $i/30..."
+            echo "Toolshop database not ready yet."
+            echo "Retrying in 5 seconds... ($i/30)"
+
             sleep 5
           done
 
+          if [ "$SEEDED" = false ]; then
+            echo "::error::Toolshop database seeding failed."
+
+            docker compose logs --tail=100
+
+            exit 1
+          fi
+
+          echo "Fixing Toolshop permissions..."
+
           docker compose exec -T --user root laravel-api \
-            chmod -R 777 storage bootstrap/cache .env || true
+            chmod -R 777 storage bootstrap/cache .env
+
 
       # ============================================================
       # WAIT FOR TOOLSHOP
@@ -231,51 +257,59 @@ jobs:
           API_READY=false
 
           for i in {1..30}; do
+
             if curl -fsS http://localhost:8091/products | grep -q "id"; then
               echo "Toolshop API is ready."
               API_READY=true
               break
             fi
 
-            echo "Waiting for API... $i/30"
+            echo "Waiting for Toolshop API... ($i/30)"
+
             sleep 5
           done
 
           if [ "$API_READY" = false ]; then
-            echo "Toolshop API failed to start."
+            echo "::error::Toolshop API failed to start."
 
             cd practice-software-testing
+
             docker compose logs --tail=100
 
             exit 1
           fi
 
-          echo "Waiting for Toolshop Frontend on port 4200..."
+
+          echo "Waiting for Toolshop frontend on port 4200..."
 
           FRONTEND_READY=false
 
           for i in {1..30}; do
+
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-              http://localhost:4200 || true)
+              http://localhost:4200 || echo "000")
 
             if [ "$STATUS" = "200" ]; then
-              echo "Toolshop Frontend is ready."
+              echo "Toolshop frontend is ready."
               FRONTEND_READY=true
               break
             fi
 
-            echo "Waiting for frontend... $i/30"
+            echo "Waiting for Toolshop frontend... ($i/30)"
+
             sleep 5
           done
 
           if [ "$FRONTEND_READY" = false ]; then
-            echo "Toolshop frontend failed to start."
+            echo "::error::Toolshop frontend failed to start."
 
             cd practice-software-testing
+
             docker compose logs --tail=100
 
             exit 1
           fi
+
 
       # ============================================================
       # START ORANGEHRM
@@ -287,13 +321,23 @@ jobs:
         run: |
           set -e
 
-          echo "Creating OrangeHRM Docker network..."
+          echo "=================================================="
+          echo "Starting OrangeHRM"
+          echo "=================================================="
+
+
+          # --------------------------------------------------------
+          # CREATE NETWORK
+          # --------------------------------------------------------
 
           docker network create orangehrm-net || true
 
+
           # --------------------------------------------------------
-          # Validate required files
+          # CHECK REQUIRED FILES
           # --------------------------------------------------------
+
+          echo "Checking OrangeHRM configuration files..."
 
           if [ ! -s ".ci/orangehrm_seed.sql" ]; then
             echo "::error::.ci/orangehrm_seed.sql is missing or empty."
@@ -306,17 +350,24 @@ jobs:
           fi
 
           echo "OrangeHRM seed file found."
-          echo "OrangeHRM configuration found."
+
+          ls -lh .ci/orangehrm_seed.sql
+
+          echo "OrangeHRM Conf.php found."
+
+          ls -lh .ci/Conf.php
+
 
           # --------------------------------------------------------
-          # Remove old containers if they exist
+          # REMOVE OLD CONTAINERS IF THEY EXIST
           # --------------------------------------------------------
 
-          docker rm -f orangehrm-app 2>/dev/null || true
           docker rm -f orangehrm-db 2>/dev/null || true
+          docker rm -f orangehrm-app 2>/dev/null || true
+
 
           # --------------------------------------------------------
-          # Start MySQL
+          # START MYSQL
           # --------------------------------------------------------
 
           echo "Starting MySQL 8.0..."
@@ -324,6 +375,7 @@ jobs:
           docker run -d \
             --name orangehrm-db \
             --network orangehrm-net \
+            --restart unless-stopped \
             -v "${{ github.workspace }}/.ci/orangehrm_seed.sql:/docker-entrypoint-initdb.d/init.sql:ro" \
             -e MYSQL_ROOT_PASSWORD=rootpass \
             -e MYSQL_DATABASE=orangehrm \
@@ -332,15 +384,19 @@ jobs:
             mysql:8.0 \
             --default-authentication-plugin=mysql_native_password
 
+
           # --------------------------------------------------------
-          # Wait for MySQL
+          # WAIT FOR MYSQL + ACTUAL SEED DATA
           # --------------------------------------------------------
 
-          echo "Waiting for MySQL initialization..."
+          echo "Waiting for MySQL and OrangeHRM seed import..."
 
-          MYSQL_READY=false
+          DB_READY=false
 
           for i in {1..60}; do
+
+            echo ""
+            echo "Database check $i/60"
 
             if docker exec orangehrm-db \
               mysqladmin ping \
@@ -351,96 +407,214 @@ jobs:
 
               echo "MySQL is accepting connections."
 
-              if docker exec orangehrm-db \
+              COUNTS=$(docker exec orangehrm-db \
                 mysql \
                 -uroot \
                 -prootpass \
-                -e "USE orangehrm; SHOW TABLES;" >/tmp/orangehrm_tables.txt 2>/dev/null; then
+                -N \
+                -B \
+                -e "
+                  SELECT
+                    (SELECT COUNT(*) FROM orangehrm.ohrm_job_title),
+                    (SELECT COUNT(*) FROM orangehrm.ohrm_job_category),
+                    (SELECT COUNT(*) FROM orangehrm.ohrm_employment_status),
+                    (SELECT COUNT(*) FROM orangehrm.ohrm_subunit),
+                    (SELECT COUNT(*) FROM orangehrm.hs_hr_employee);
+                " 2>/dev/null || true)
 
-                TABLE_COUNT=$(docker exec orangehrm-db \
-                  mysql \
-                  -uroot \
-                  -prootpass \
-                  -N \
-                  -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='orangehrm';")
 
-                echo "OrangeHRM table count: $TABLE_COUNT"
+              echo "Current OrangeHRM counts:"
+              echo "$COUNTS"
 
-                if [ "$TABLE_COUNT" -gt 0 ]; then
-                  MYSQL_READY=true
-                  echo "OrangeHRM database initialization completed."
+
+              if [ -n "$COUNTS" ]; then
+
+                JOB_TITLE=$(echo "$COUNTS" | awk '{print $1}')
+                JOB_CATEGORY=$(echo "$COUNTS" | awk '{print $2}')
+                EMPLOYMENT_STATUS=$(echo "$COUNTS" | awk '{print $3}')
+                SUBUNIT=$(echo "$COUNTS" | awk '{print $4}')
+                EMPLOYEE=$(echo "$COUNTS" | awk '{print $5}')
+
+
+                echo "Job Titles: $JOB_TITLE"
+                echo "Job Categories: $JOB_CATEGORY"
+                echo "Employment Statuses: $EMPLOYMENT_STATUS"
+                echo "Sub Units: $SUBUNIT"
+                echo "Employees: $EMPLOYEE"
+
+
+                if [ "$JOB_TITLE" -ge 1 ] \
+                  && [ "$JOB_CATEGORY" -ge 1 ] \
+                  && [ "$EMPLOYMENT_STATUS" -ge 1 ] \
+                  && [ "$SUBUNIT" -ge 1 ] \
+                  && [ "$EMPLOYEE" -ge 1 ]; then
+
+                  echo ""
+                  echo "OrangeHRM seed import completed successfully."
+
+                  DB_READY=true
+
                   break
                 fi
               fi
+
+            else
+
+              echo "MySQL is not ready yet."
+
             fi
 
-            echo "Waiting for MySQL/database initialization... $i/60"
             sleep 3
+
           done
 
-          if [ "$MYSQL_READY" = false ]; then
-            echo "::error::OrangeHRM MySQL database did not initialize correctly."
 
-            echo "MySQL container logs:"
-            docker logs --tail=200 orangehrm-db
+          # --------------------------------------------------------
+          # FAIL IF DATABASE SEED DID NOT LOAD
+          # --------------------------------------------------------
+
+          if [ "$DB_READY" = false ]; then
+
+            echo "::error::OrangeHRM database seed did not complete."
+
+            echo ""
+            echo "=================================================="
+            echo "DATABASE COUNTS"
+            echo "=================================================="
+
+            docker exec orangehrm-db \
+              mysql \
+              -uroot \
+              -prootpass \
+              -e "
+                SELECT COUNT(*) AS job_titles
+                FROM orangehrm.ohrm_job_title;
+
+                SELECT COUNT(*) AS job_categories
+                FROM orangehrm.ohrm_job_category;
+
+                SELECT COUNT(*) AS employment_statuses
+                FROM orangehrm.ohrm_employment_status;
+
+                SELECT COUNT(*) AS subunits
+                FROM orangehrm.ohrm_subunit;
+
+                SELECT COUNT(*) AS employees
+                FROM orangehrm.hs_hr_employee;
+
+                SELECT COUNT(*) AS locations
+                FROM orangehrm.ohrm_location;
+              " || true
+
+
+            echo ""
+            echo "=================================================="
+            echo "MYSQL LOGS"
+            echo "=================================================="
+
+            docker logs --tail=200 orangehrm-db || true
 
             exit 1
+
           fi
 
+
           # --------------------------------------------------------
-          # Verify important OrangeHRM data
+          # PRINT IMPORTANT SEED DATA
           # --------------------------------------------------------
 
-          echo "Checking OrangeHRM job titles..."
+          echo ""
+          echo "=================================================="
+          echo "ORANGEHRM JOB TITLES"
+          echo "=================================================="
 
-          JOB_TITLE_COUNT=$(docker exec orangehrm-db \
+          docker exec orangehrm-db \
             mysql \
-            -uorangehrm \
-            -porangehrmpass \
-            -N \
-            -e "SELECT COUNT(*) FROM orangehrm.ohrm_job_title;" \
-            2>/dev/null || echo "0")
+            -uroot \
+            -prootpass \
+            -e "
+              SELECT id, job_title, is_deleted
+              FROM orangehrm.ohrm_job_title;
+            "
 
-          echo "Job title count: $JOB_TITLE_COUNT"
 
-          echo "Checking OrangeHRM employees..."
+          echo ""
+          echo "=================================================="
+          echo "ORANGEHRM JOB CATEGORIES"
+          echo "=================================================="
 
-          EMPLOYEE_COUNT=$(docker exec orangehrm-db \
+          docker exec orangehrm-db \
             mysql \
-            -uorangehrm \
-            -porangehrmpass \
-            -N \
-            -e "SELECT COUNT(*) FROM orangehrm.hs_hr_employee;" \
-            2>/dev/null || echo "0")
+            -uroot \
+            -prootpass \
+            -e "
+              SELECT id, name
+              FROM orangehrm.ohrm_job_category;
+            "
 
-          echo "Employee count: $EMPLOYEE_COUNT"
 
-          echo "Checking OrangeHRM users..."
+          echo ""
+          echo "=================================================="
+          echo "ORANGEHRM EMPLOYMENT STATUS"
+          echo "=================================================="
 
-          USER_COUNT=$(docker exec orangehrm-db \
+          docker exec orangehrm-db \
             mysql \
-            -uorangehrm \
-            -porangehrmpass \
-            -N \
-            -e "SELECT COUNT(*) FROM orangehrm.ohrm_user;" \
-            2>/dev/null || echo "0")
+            -uroot \
+            -prootpass \
+            -e "
+              SELECT id, name
+              FROM orangehrm.ohrm_employment_status;
+            "
 
-          echo "User count: $USER_COUNT"
+
+          echo ""
+          echo "=================================================="
+          echo "ORANGEHRM SUB UNITS"
+          echo "=================================================="
+
+          docker exec orangehrm-db \
+            mysql \
+            -uroot \
+            -prootpass \
+            -e "
+              SELECT id, name
+              FROM orangehrm.ohrm_subunit;
+            "
+
+
+          echo ""
+          echo "=================================================="
+          echo "ORANGEHRM LOCATIONS"
+          echo "=================================================="
+
+          docker exec orangehrm-db \
+            mysql \
+            -uroot \
+            -prootpass \
+            -e "
+              SELECT id, name, city, province, country_code
+              FROM orangehrm.ohrm_location;
+            " || true
+
 
           # --------------------------------------------------------
-          # Start OrangeHRM application
+          # START ORANGEHRM APP
           # --------------------------------------------------------
 
+          echo ""
           echo "Starting OrangeHRM application..."
 
           docker run -d \
             --name orangehrm-app \
             --network orangehrm-net \
+            --restart unless-stopped \
             -p 4201:80 \
             -v "${{ github.workspace }}/.ci/Conf.php:/var/www/html/lib/confs/Conf.php:ro" \
             orangehrm/orangehrm:latest
 
-          echo "OrangeHRM application started."
+          echo "OrangeHRM application container started."
+
 
       # ============================================================
       # WAIT FOR ORANGEHRM
@@ -459,97 +633,70 @@ jobs:
           for i in {1..60}; do
 
             STATUS=$(curl -s -L \
-              -o /tmp/orangehrm_login.html \
+              -o /dev/null \
               -w "%{http_code}" \
-              http://localhost:4201/web/index.php/auth/login || true)
+              http://localhost:4201/web/index.php/auth/login \
+              || echo "000")
+
+
+            echo "OrangeHRM HTTP status: $STATUS"
+
 
             if [ "$STATUS" = "200" ]; then
+
               echo "OrangeHRM login page is ready."
 
               ORANGE_READY=true
+
               break
+
             fi
 
-            echo "OrangeHRM is starting... attempt $i/60 (HTTP $STATUS)"
+            echo "OrangeHRM is still starting... ($i/60)"
 
             sleep 5
+
           done
+
 
           if [ "$ORANGE_READY" = false ]; then
 
             echo "::error::OrangeHRM failed to start."
 
-            echo "----------------------------------------"
-            echo "OrangeHRM application logs"
-            echo "----------------------------------------"
+            echo ""
+            echo "=================================================="
+            echo "ORANGEHRM APPLICATION LOGS"
+            echo "=================================================="
 
             docker logs --tail=200 orangehrm-app || true
 
-            echo "----------------------------------------"
-            echo "MySQL logs"
-            echo "----------------------------------------"
 
-            docker logs --tail=200 orangehrm-db || true
+            echo ""
+            echo "=================================================="
+            echo "MYSQL LOGS"
+            echo "=================================================="
 
-            echo "----------------------------------------"
-            echo "Apache error log"
-            echo "----------------------------------------"
+            docker logs --tail=100 orangehrm-db || true
+
+
+            echo ""
+            echo "=================================================="
+            echo "APACHE ERROR LOG"
+            echo "=================================================="
 
             docker exec orangehrm-app \
               cat /var/log/apache2/error.log \
               2>/dev/null || true
 
             exit 1
+
           fi
 
-          echo "OrangeHRM is ready on http://localhost:4201"
 
-      # ============================================================
-      # VERIFY ORANGEHRM DATABASE
-      # ============================================================
+          echo ""
+          echo "OrangeHRM is ready at:"
+          echo "http://localhost:4201/web/index.php/auth/login"
 
-      - name: Verify OrangeHRM Test Data
-        if: steps.detect.outputs.has_changes == 'true'
-        shell: bash
-        run: |
-          echo "========================================"
-          echo "OrangeHRM Database Verification"
-          echo "========================================"
-
-          echo "Employees:"
-          docker exec orangehrm-db \
-            mysql \
-            -uorangehrm \
-            -porangehrmpass \
-            -e "
-              SELECT emp_number,
-                     employee_id,
-                     emp_firstname,
-                     emp_lastname
-              FROM orangehrm.hs_hr_employee;
-            " || true
-
-          echo "Job Titles:"
-          docker exec orangehrm-db \
-            mysql \
-            -uorangehrm \
-            -porangehrmpass \
-            -e "
-              SELECT id,
-                     job_title
-              FROM orangehrm.ohrm_job_title;
-            " || true
-
-          echo "Employment Status:"
-          docker exec orangehrm-db \
-            mysql \
-            -uorangehrm \
-            -porangehrmpass \
-            -e "
-              SELECT id,
-                     name
-              FROM orangehrm_ohrm_employment_status;
-            " 2>/dev/null || true
 
       # ============================================================
       # RUN PYTHON TESTS
@@ -570,6 +717,7 @@ jobs:
             --self-contained-html \
             -v
 
+
       # ============================================================
       # RUN JAVASCRIPT TESTS
       # ============================================================
@@ -586,8 +734,9 @@ jobs:
 
           npx playwright test
 
+
       # ============================================================
-      # UPLOAD TEST REPORTS
+      # UPLOAD REPORTS
       # ============================================================
 
       - name: Upload Test Reports
@@ -595,40 +744,15 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: task-test-reports
+
           path: |
             ${{ steps.detect.outputs.python_task_dir }}/report.html
             ${{ steps.detect.outputs.python_task_dir }}/failure_*.png
-            ${{ steps.detect.outputs.python_task_dir }}/test-results/
             ${{ steps.detect.outputs.js_task_dir }}/playwright-report/
-            ${{ steps.detect.outputs.js_task_dir }}/test-results/
             ${{ steps.detect.outputs.js_task_dir }}/failure-*.png
+
           if-no-files-found: ignore
 
-      # ============================================================
-      # DEBUG CONTAINERS IF TEST FAILS
-      # ============================================================
-
-      - name: OrangeHRM Debug Logs
-        if: failure() && steps.detect.outputs.has_changes == 'true'
-        shell: bash
-        run: |
-          echo "========================================"
-          echo "OrangeHRM APP LOGS"
-          echo "========================================"
-
-          docker logs --tail=200 orangehrm-app 2>/dev/null || true
-
-          echo "========================================"
-          echo "ORANGEHRM MYSQL LOGS"
-          echo "========================================"
-
-          docker logs --tail=200 orangehrm-db 2>/dev/null || true
-
-          echo "========================================"
-          echo "RUNNING CONTAINERS"
-          echo "========================================"
-
-          docker ps -a
 
   # ================================================================
   # DOCKER HUB DEPLOYMENT
@@ -643,22 +767,24 @@ jobs:
 
     steps:
 
-      # ============================================================
+      # ------------------------------------------------------------
       # CHECKOUT
-      # ============================================================
+      # ------------------------------------------------------------
 
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ============================================================
-      # DOCKER LOGIN
-      # ============================================================
+
+      # ------------------------------------------------------------
+      # DOCKER HUB LOGIN
+      # ------------------------------------------------------------
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
+
 
       # ============================================================
       # PYTHON DOCKER IMAGE
@@ -674,14 +800,11 @@ jobs:
           MEMBER="${{ needs.test.outputs.python_member }}"
           TASK_NAME="${{ needs.test.outputs.python_task_name }}"
 
-          echo "Python task directory: $TASK_DIR"
-          echo "Member: $MEMBER"
-          echo "Task: $TASK_NAME"
 
           if [ -f "$TASK_DIR/Dockerfile" ]; then
 
-            if echo "$TASK_DIR" | grep -qi "orange" || \
-               grep -rqiE "(orangehrm|4201)" "$TASK_DIR"; then
+            if echo "$TASK_DIR" | grep -qi "orange" \
+              || grep -rqiE "(orangehrm|4201)" "$TASK_DIR"; then
 
               REPO_NAME="orangehrm-tests"
 
@@ -691,18 +814,23 @@ jobs:
 
             fi
 
+
             IMAGE_TAG="${{ secrets.DOCKER_USERNAME }}/${REPO_NAME}:${MEMBER}-${TASK_NAME}-python"
 
-            echo "Repository: $REPO_NAME"
-            echo "Image: $IMAGE_TAG"
+
+            echo "Selected repository: $REPO_NAME"
+            echo "Building image: $IMAGE_TAG"
+            echo "Source directory: $TASK_DIR"
+
 
             docker build \
               -t "$IMAGE_TAG" \
               "$TASK_DIR"
 
-            docker push "$IMAGE_TAG"
 
-            echo "Python image pushed successfully."
+            echo "Pushing image..."
+
+            docker push "$IMAGE_TAG"
 
           else
 
@@ -710,6 +838,7 @@ jobs:
             echo "Skipping Python image build."
 
           fi
+
 
       # ============================================================
       # JAVASCRIPT DOCKER IMAGE
@@ -725,14 +854,11 @@ jobs:
           MEMBER="${{ needs.test.outputs.js_member }}"
           TASK_NAME="${{ needs.test.outputs.js_task_name }}"
 
-          echo "JavaScript task directory: $TASK_DIR"
-          echo "Member: $MEMBER"
-          echo "Task: $TASK_NAME"
 
           if [ -f "$TASK_DIR/Dockerfile" ]; then
 
-            if echo "$TASK_DIR" | grep -qi "orange" || \
-               grep -rqiE "(orangehrm|4201)" "$TASK_DIR"; then
+            if echo "$TASK_DIR" | grep -qi "orange" \
+              || grep -rqiE "(orangehrm|4201)" "$TASK_DIR"; then
 
               REPO_NAME="orangehrm-tests"
 
@@ -742,22 +868,27 @@ jobs:
 
             fi
 
+
             IMAGE_TAG="${{ secrets.DOCKER_USERNAME }}/${REPO_NAME}:${MEMBER}-${TASK_NAME}-js"
 
-            echo "Repository: $REPO_NAME"
-            echo "Image: $IMAGE_TAG"
+
+            echo "Selected repository: $REPO_NAME"
+            echo "Building image: $IMAGE_TAG"
+            echo "Source directory: $TASK_DIR"
+
 
             docker build \
               -t "$IMAGE_TAG" \
               "$TASK_DIR"
 
-            docker push "$IMAGE_TAG"
 
-            echo "JavaScript image pushed successfully."
+            echo "Pushing image..."
+
+            docker push "$IMAGE_TAG"
 
           else
 
             echo "No Dockerfile found in $TASK_DIR."
-            echo "Skipping JavaScript image build."
+            echo "Skipping JS image build."
 
           fi
