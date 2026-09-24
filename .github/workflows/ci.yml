@@ -87,6 +87,7 @@ jobs:
         run: |
           cd ${{ steps.detect.outputs.python_task_dir }}
           pip install -r requirements.txt
+          pip install pytest-html
           playwright install --with-deps chromium
 
       # ------------------- JAVASCRIPT ENVIRONMENT -------------------
