@@ -40,9 +40,14 @@ def test_update_employee_job_details():
         # 7. Open the Job section
         page.get_by_text("Job", exact=True).click()
 
-        # 8. Select Job Title
+        # 8. Check Job Title options
         page.locator(".oxd-select-text").nth(0).click()
-        page.locator(".oxd-select-option").nth(1).click()
+
+        options = page.locator(".oxd-select-option")
+        print("Job Title option count:", options.count())
+
+        for i in range(options.count()):
+            print("Job Title option:", i, options.nth(i).inner_text())
 
         # 9. Select Employment Status
         page.locator(".oxd-select-text").nth(1).click()
