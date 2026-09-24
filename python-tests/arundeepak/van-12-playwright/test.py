@@ -2,7 +2,7 @@ import random
 from pathlib import Path
 from playwright.sync_api import expect, sync_playwright
 
-BASE_URL = "http://localhost:4201";
+BASE_URL = "http://localhost:4201/web/index.php/auth/login";
 USERNAME = "Admin"
 PASSWORD = "Admin@123098"
 IMAGE_PATH = Path(__file__).parent / "images" / "PNG1.jpg"
