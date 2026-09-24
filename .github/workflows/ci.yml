@@ -34,7 +34,6 @@ jobs:
       - name: Detect changed task directories & languages
         id: detect
         run: |
-          # Differentiate between a direct push to main and branch/PR changes
           if [ "${{ github.ref_name }}" = "main" ] && [ "${{ github.event_name }}" = "push" ]; then
             DIFF_BASE="HEAD~1 HEAD"
           else
@@ -43,7 +42,6 @@ jobs:
 
           echo "Diffing base: $DIFF_BASE"
 
-          # Detect Python changes (ignores .gitkeep, requires 3-level folder structure)
           PY_TASK=$(git diff --name-only $DIFF_BASE | grep -iE '^python-tests/[^/]+/[^/]+' | grep -v '\.gitkeep' | cut -d'/' -f1-3 | sort -u | head -n 1)
           if [ -n "$PY_TASK" ] && [ -d "$PY_TASK" ]; then
             echo "has_python=true" >> $GITHUB_OUTPUT
@@ -55,7 +53,6 @@ jobs:
             echo "has_python=false" >> $GITHUB_OUTPUT
           fi
 
-          # Detect JavaScript changes (ignores .gitkeep, requires 3-level folder structure)
           JS_TASK=$(git diff --name-only $DIFF_BASE | grep -iE '^js-tests/[^/]+/[^/]+' | grep -v '\.gitkeep' | cut -d'/' -f1-3 | sort -u | head -n 1)
           if [ -n "$JS_TASK" ] && [ -d "$JS_TASK" ]; then
             echo "has_js=true" >> $GITHUB_OUTPUT
@@ -67,7 +64,6 @@ jobs:
             echo "has_js=false" >> $GITHUB_OUTPUT
           fi
 
-          # Global changes indicator
           if [ -d "$PY_TASK" ] || [ -d "$JS_TASK" ]; then
             echo "has_changes=true" >> $GITHUB_OUTPUT
           else
@@ -161,40 +157,60 @@ jobs:
         run: |
           docker network create orangehrm-net || true
 
+          # 1. Validate required seed and configuration files
+          if [ ! -s ".ci/orangehrm_seed.sql" ]; then
+            echo "::error::.ci/orangehrm_seed.sql is missing or empty! Make sure you exported the database and committed it."
+            exit 1
+          fi
+          if [ ! -s ".ci/Conf.php" ]; then
+            echo "::error::.ci/Conf.php is missing or empty! Run 'docker cp orangehrm-app:/var/www/html/lib/confs/Conf.php .ci/Conf.php' locally and commit it."
+            exit 1
+          fi
+
+          # 2. Start MySQL 8.0 with mounted seed file
           docker run -d --name orangehrm-db \
             --network orangehrm-net \
             --restart unless-stopped \
+            -v ${{ github.workspace }}/.ci/orangehrm_seed.sql:/docker-entrypoint-initdb.d/init.sql \
             -e MYSQL_ROOT_PASSWORD=rootpass \
             -e MYSQL_DATABASE=orangehrm \
             -e MYSQL_USER=orangehrm \
             -e MYSQL_PASSWORD=orangehrmpass \
-            mariadb:10.5
+            mysql:8.0 \
+            --default-authentication-plugin=mysql_native_password
 
-          echo "Waiting 15s for OrangeHRM database to start..."
-          sleep 15
+          echo "Waiting for MySQL 8.0 initialization and database import..."
+          for i in {1..40}; do
+            if docker exec orangehrm-db mysqladmin ping -h localhost -uroot -prootpass --silent; then
+              if docker exec orangehrm-db mysql -uroot -prootpass -e "USE orangehrm;" 2>/dev/null; then
+                echo "MySQL database is accepting connections and tables are initialized."
+                break
+              fi
+            fi
+            sleep 2
+          done
 
+          # 3. Start OrangeHRM App with mounted Conf.php
           docker run -d --name orangehrm-app \
             --network orangehrm-net \
             --restart unless-stopped \
             -p 4201:80 \
-            -e ORANGEHRM_DATABASE_HOST=orangehrm-db \
-            -e ORANGEHRM_DATABASE_NAME=orangehrm \
-            -e ORANGEHRM_DATABASE_USER=orangehrm \
-            -e ORANGEHRM_DATABASE_PASSWORD=orangehrmpass \
+            -v ${{ github.workspace }}/.ci/Conf.php:/var/www/html/lib/confs/Conf.php \
             orangehrm/orangehrm:latest
 
       - name: Wait for OrangeHRM Readiness (port 4201)
         if: steps.detect.outputs.has_changes == 'true'
         run: |
-          echo "Waiting for OrangeHRM (port 4201)..."
+          echo "Waiting for OrangeHRM Login Page..."
           ORANGE_READY=false
           for i in {1..40}; do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:4201 || echo "000")
-            if [ "$STATUS" = "200" ] || [ "$STATUS" = "302" ]; then
-              echo "OrangeHRM is ready (HTTP $STATUS)."
+            STATUS=$(curl -s -L -o /dev/null -w "%{http_code}" http://localhost:4201/web/index.php/auth/login || echo "000")
+            if [ "$STATUS" = "200" ]; then
+              echo "OrangeHRM login page is live and responsive (HTTP 200)."
               ORANGE_READY=true
               break
             fi
+            echo "OrangeHRM is starting up... attempt $i/40 (HTTP $STATUS)"
             sleep 5
           done
 
@@ -202,6 +218,8 @@ jobs:
             echo "OrangeHRM failed to boot. Container logs:"
             docker logs --tail=100 orangehrm-app
             docker logs --tail=50 orangehrm-db
+            echo "--- Apache/PHP Error Log ---"
+            docker exec orangehrm-app cat /var/log/apache2/error.log 2>/dev/null || true
             exit 1
           fi
 
@@ -254,20 +272,16 @@ jobs:
           TASK_NAME="${{ needs.test.outputs.python_task_name }}"
 
           if [ -f "$TASK_DIR/Dockerfile" ]; then
-            # Dynamic destination repository routing
             if echo "$TASK_DIR" | grep -qi "orange" || grep -rqiE "(orangehrm|4201)" "$TASK_DIR"; then
               REPO_NAME="orangehrm-tests"
             else
               REPO_NAME="toolshop-tests"
             fi
 
-            # Tag format: <dockerhub-user>/<repo>:<member>-<jira-task>-python
             IMAGE_TAG="${{ secrets.DOCKER_USERNAME }}/${REPO_NAME}:${MEMBER}-${TASK_NAME}-python"
-            
             echo "Selected repository: $REPO_NAME"
             echo "Building image: $IMAGE_TAG from $TASK_DIR"
             docker build -t "$IMAGE_TAG" "$TASK_DIR"
-            
             echo "Pushing image: $IMAGE_TAG"
             docker push "$IMAGE_TAG"
           else
@@ -282,20 +296,16 @@ jobs:
           TASK_NAME="${{ needs.test.outputs.js_task_name }}"
 
           if [ -f "$TASK_DIR/Dockerfile" ]; then
-            # Dynamic destination repository routing
             if echo "$TASK_DIR" | grep -qi "orange" || grep -rqiE "(orangehrm|4201)" "$TASK_DIR"; then
               REPO_NAME="orangehrm-tests"
             else
               REPO_NAME="toolshop-tests"
             fi
 
-            # Tag format: <dockerhub-user>/<repo>:<member>-<jira-task>-js
             IMAGE_TAG="${{ secrets.DOCKER_USERNAME }}/${REPO_NAME}:${MEMBER}-${TASK_NAME}-js"
-            
             echo "Selected repository: $REPO_NAME"
             echo "Building image: $IMAGE_TAG from $TASK_DIR"
             docker build -t "$IMAGE_TAG" "$TASK_DIR"
-            
             echo "Pushing image: $IMAGE_TAG"
             docker push "$IMAGE_TAG"
           else
