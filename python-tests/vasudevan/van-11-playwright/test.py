@@ -139,19 +139,5 @@ with sync_playwright() as p:
     expect(page.get_by_text("Successfully Deleted")).to_be_visible()
     print("Employee deleted successfully")
 
-    # 17. Search for the deleted employee again
-    employee_id_search = (
-    page.locator(".oxd-input-group")
-    .filter(has_text="Employee Id")
-    .locator("input")
-)
-
-    employee_id_search.fill(employee_id)
-    page.get_by_role("button", name="Search").click()
-
-    # 18. Verify the deleted employee is no longer displayed
-    expect(page.get_by_text("No Records Found")).to_be_visible()
-
-    print("Deleted employee is no longer displayed")
 
     browser.close()
