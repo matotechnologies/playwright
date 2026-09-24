@@ -8,7 +8,7 @@ BASE_URL = "http://localhost:4200/"
 def test_ecommerce(browser_name):
 
     with sync_playwright() as p:
-        browser = getattr(p, browser_name).launch(headless=False)
+        browser = getattr(p, browser_name).launch(headless=True)
         page = browser.new_page()
 
         page.goto(BASE_URL)
