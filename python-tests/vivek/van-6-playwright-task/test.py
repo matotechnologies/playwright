@@ -39,6 +39,16 @@ def test_update_employee_job_details():
 
         # 7. Open the Job section
         page.get_by_text("Job", exact=True).click()
+        
+        print("URL after opening Job:", page.url)
+        print("Page content after opening Job:")
+        print(page.locator("body").inner_text())
+        
+        selects = page.locator(".oxd-select-text")
+        print("Select count:", selects.count())
+        
+        for i in range(selects.count()):
+            print("Select", i, "text:", repr(selects.nth(i).inner_text()))
 
         # 8. Inspect Job dropdowns
         selects = page.locator(".oxd-select-text")
