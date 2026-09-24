@@ -6,7 +6,6 @@ BASE_URL = "http://localhost:4201/web/index.php/auth/login"
 USERNAME = "Admin"
 PASSWORD = "Admin@123098"
 
-
 def test_orangehrm(page):
 
     employee_id = "EMP" + str(random.randint(1000, 9999))
