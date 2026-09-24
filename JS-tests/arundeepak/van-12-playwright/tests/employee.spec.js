@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-const BASE_URL = "http://localhost:4201";
+const BASE_URL = "http://localhost:4201/web/index.php/auth/login";
 const USERNAME = 'Admin';
 const PASSWORD = 'Admin@123098';
 
