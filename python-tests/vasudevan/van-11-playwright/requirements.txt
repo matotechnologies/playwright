@@ -1,4 +1,2 @@
-pytest
-pytest-html
-playwright
-pytest-playwright
+pytest-playwright>=0.5.0
+pytest-html>=4.2.0
