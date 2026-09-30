@@ -41,7 +41,7 @@ def future_workday(days=14, year=None):
             d = d.replace(year=year)
         except ValueError:
             d = date(year, d.month, 28)
-    while d.weekday() >= 5:  # Skip Sat/Sun
+    while d.weekday() >= 5:
         d += timedelta(days=1)
     return d
 
@@ -96,15 +96,17 @@ def apply_leave(page, d):
     page.goto(f"{BASE_URL}/web/index.php/leave/applyLeave")
     page.wait_for_load_state("networkidle")
 
-    # Select Leave Type
+    # Open leave type dropdown
     page.locator(".oxd-select-text").first.click()
     page.locator(".oxd-select-dropdown").wait_for(state="visible", timeout=5000)
 
-    matched = page.locator(".oxd-select-dropdown .oxd-select-option").filter(has_text=State.leave_type)
+    # Select configured leave type or first non-empty option
+    options = page.locator(".oxd-select-dropdown .oxd-select-option:not(:has-text('-- Select --'))")
+    matched = options.filter(has_text=re.compile(re.escape(State.leave_type), re.I))
     if matched.count() > 0:
         matched.first.click()
     else:
-        page.locator(".oxd-select-dropdown .oxd-select-option:not(:has-text('-- Select --'))").first.click()
+        options.first.click()
 
     set_dates(page, d)
     page.locator("textarea").fill(REASON)
@@ -185,31 +187,20 @@ def test_setup_02_create_employee(admin_page):
 
 def test_setup_03_ensure_leave_type(admin_page):
     page = admin_page
-    # 1. Direct API creation (fastest & most reliable)
-    try:
-        admin_page.request.post(
-            f"{BASE_URL}/api/v2/leave/leave-types",
-            data={"name": LEAVE_TYPE}
-        )
-    except Exception:
-        pass
-
-    # 2. UI fallback verification
     page.goto(f"{BASE_URL}/web/index.php/leave/leaveTypeList")
     page.wait_for_load_state("networkidle")
-    page.wait_for_timeout(1000)
 
     if page.locator(".oxd-table-card", has_text=LEAVE_TYPE).count() == 0:
-        add_btn = page.locator("button:has-text('Add')")
-        if add_btn.count() > 0:
+        add_btn = page.get_by_role("button", name="Add")
+        if add_btn.is_visible():
             add_btn.click()
             page.wait_for_load_state("networkidle")
             name_input = page.locator(".oxd-input-group").filter(
-                has=page.locator("label", has_text="Name")
+                has=page.locator("label:has-text('Name')")
             ).locator("input")
             name_input.fill(LEAVE_TYPE)
-            page.locator("button[type='submit'], button:has-text('Save')").first.click()
-            page.wait_for_timeout(1500)
+            page.locator("button[type='submit']").click()
+            page.wait_for_timeout(2000)
 
 
 def test_setup_04_add_entitlement(admin_page):
@@ -218,43 +209,49 @@ def test_setup_04_add_entitlement(admin_page):
     page.wait_for_load_state("networkidle")
     page.wait_for_timeout(1000)
 
-    # 1. Type First Name with delay to trigger autocomplete search
+    # 1. Type employee name
     hint_box = page.get_by_placeholder("Type for hints...")
-    hint_box.wait_for(state="visible", timeout=15000)
+    hint_box.wait_for(state="visible", timeout=10000)
     hint_box.click()
-    hint_box.press_sequentially(FIRST, delay=150)
+    hint_box.press_sequentially(FIRST, delay=100)
 
-    # 2. Select matching employee from dropdown
-    page.locator(".oxd-autocomplete-dropdown").wait_for(state="visible", timeout=15000)
-    matched_emp = page.locator(".oxd-autocomplete-option").filter(has_text=LAST)
-    if matched_emp.count() > 0:
-        matched_emp.first.click()
+    # 2. Wait until "Searching...." is gone and real options are loaded
+    page.locator(".oxd-autocomplete-dropdown").wait_for(state="visible", timeout=10000)
+    page.wait_for_selector(
+        ".oxd-autocomplete-dropdown .oxd-autocomplete-option:not(:has-text('Searching'))",
+        timeout=10000
+    )
+
+    # Select option matching employee's unique last name
+    options = page.locator(".oxd-autocomplete-dropdown .oxd-autocomplete-option")
+    emp_opt = options.filter(has_text=LAST)
+    if emp_opt.count() > 0:
+        emp_opt.first.click()
     else:
-        page.locator(".oxd-autocomplete-option").first.click()
+        options.first.click()
     page.wait_for_timeout(500)
 
     # 3. Select Leave Type
-    lt_select = page.locator(".oxd-input-group").filter(
-        has=page.locator("label", has_text="Leave Type")
-    ).locator(".oxd-select-text")
-    lt_select.click()
+    lt_group = page.locator(".oxd-input-group").filter(
+        has=page.locator("label", has_text=re.compile(r"Leave Type", re.I))
+    )
+    lt_group.locator(".oxd-select-text").click()
     page.locator(".oxd-select-dropdown").wait_for(state="visible", timeout=5000)
 
-    matched_type = page.locator(".oxd-select-dropdown .oxd-select-option").filter(
-        has_text=re.compile(re.escape(LEAVE_TYPE), re.I)
-    )
+    lt_options = page.locator(".oxd-select-dropdown .oxd-select-option:not(:has-text('-- Select --'))")
+    matched_type = lt_options.filter(has_text=re.compile(re.escape(State.leave_type), re.I))
     if matched_type.count() > 0:
         State.leave_type = matched_type.first.inner_text().strip()
         matched_type.first.click()
     else:
-        first_opt = page.locator(".oxd-select-dropdown .oxd-select-option:not(:has-text('-- Select --'))").first
+        first_opt = lt_options.first
         State.leave_type = first_opt.inner_text().strip()
         first_opt.click()
     page.wait_for_timeout(500)
 
     # 4. Handle Leave Period
     period_group = page.locator(".oxd-input-group").filter(
-        has=page.locator("label", has_text="Leave Period")
+        has=page.locator("label", has_text=re.compile(r"Leave Period", re.I))
     )
     if period_group.count() > 0:
         period_box = period_group.locator(".oxd-select-text")
@@ -272,22 +269,31 @@ def test_setup_04_add_entitlement(admin_page):
             State.target_year = int(ym.group(1))
 
     # 5. Fill Entitlement amount
-    ent_input = page.locator(".oxd-input-group").filter(
-        has=page.locator("label", has_text="Entitlement")
-    ).locator("input")
+    ent_group = page.locator(".oxd-input-group").filter(
+        has=page.locator("label", has_text=re.compile(r"Entitlement", re.I))
+    )
+    ent_input = ent_group.locator("input")
+    ent_input.click()
     ent_input.fill(str(ENTITLEMENT))
 
     # 6. Save and handle confirmation modal
-    page.locator("button[type='submit'], button:has-text('Save')").first.click()
+    page.locator("button[type='submit']").click()
     try:
-        confirm_btn = page.locator(".oxd-dialog-container-default button:has-text('Confirm')")
+        confirm_btn = page.locator(".oxd-dialog-container-default").get_by_role("button", name="Confirm")
         confirm_btn.wait_for(state="visible", timeout=3000)
         confirm_btn.click()
     except Exception:
         pass
 
+    # 7. Check for validation errors or success
+    page.wait_for_timeout(1500)
+    errs = page.locator(".oxd-input-field-error-message").all_inner_texts()
+    if errs:
+        shot(page, "err_add_entitlement_validation")
+        raise AssertionError(f"Entitlement form validation failed with errors: {errs}")
+
     try:
-        page.wait_for_url(re.compile("viewLeaveEntitlements"), timeout=10000)
+        page.wait_for_url(re.compile("viewLeaveEntitlements"), timeout=8000)
     except Exception:
         expect(page.locator(".oxd-toast")).to_be_visible(timeout=5000)
     shot(page, "00_admin_entitlement")
@@ -325,7 +331,7 @@ def test_step_03_to_06_apply_leave(emp_page):
 
 def test_step_07_verify_request_in_my_leave(emp_page):
     filter_my_leave(emp_page)
-    expect(emp_page.locator(".oxd-table-card", has_text=State.leave_date).first).to_be_visible(timeout=15000)
+    expect(page.locator(".oxd-table-card", has_text=State.leave_date).first).to_be_visible(timeout=15000)
 
 
 def test_step_08_and_09_verify_status_pending(emp_page):
