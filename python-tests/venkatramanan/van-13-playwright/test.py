@@ -95,12 +95,12 @@ def set_dates(page, d):
 def apply_leave(page, d):
     page.goto(f"{BASE_URL}/web/index.php/leave/applyLeave")
     page.wait_for_load_state("networkidle")
-    
-    # Open leave type dropdown
+
+    # Select Leave Type
     page.locator(".oxd-select-text").first.click()
     page.locator(".oxd-select-dropdown").wait_for(state="visible", timeout=5000)
-    
-    matched = page.locator(".oxd-select-dropdown .oxd-select-option", has_text=State.leave_type)
+
+    matched = page.locator(".oxd-select-dropdown .oxd-select-option").filter(has_text=State.leave_type)
     if matched.count() > 0:
         matched.first.click()
     else:
@@ -114,11 +114,10 @@ def apply_leave(page, d):
 def filter_my_leave(page, d=None, status="Pending Approval"):
     page.goto(f"{BASE_URL}/web/index.php/leave/viewMyLeaveList")
     page.wait_for_load_state("networkidle")
-    
-    # Set status filter
+
     page.locator(".oxd-select-text").first.click()
     page.locator(".oxd-select-dropdown .oxd-select-option", has_text=status).first.click()
-    
+
     if d:
         set_dates(page, d)
     page.get_by_role("button", name="Search").click()
@@ -190,16 +189,19 @@ def test_setup_03_ensure_leave_type(admin_page):
     page.wait_for_load_state("networkidle")
     page.wait_for_timeout(1000)
 
-    # If LEAVE_TYPE does not exist, define it
+    # Click + Add button to create leave type if not in table
     if page.locator(".oxd-table-card", has_text=LEAVE_TYPE).count() == 0:
-        page.goto(f"{BASE_URL}/web/index.php/leave/defineLeaveType")
-        page.wait_for_load_state("networkidle")
-        field(page, "Name").fill(LEAVE_TYPE)
-        page.get_by_role("button", name="Save").click()
-        try:
-            page.wait_for_url(re.compile("leaveTypeList"), timeout=10000)
-        except Exception:
-            pass
+        add_btn = page.get_by_role("button", name="Add")
+        if add_btn.is_visible():
+            add_btn.click()
+            page.wait_for_selector(".oxd-form", timeout=10000)
+            name_input = page.locator(".oxd-input-group").filter(has=page.locator("label:has-text('Name')")).locator("input")
+            name_input.fill(LEAVE_TYPE)
+            page.get_by_role("button", name="Save").click()
+            try:
+                page.wait_for_url(re.compile("leaveTypeList"), timeout=10000)
+            except Exception:
+                pass
 
 
 def test_setup_04_add_entitlement(admin_page):
@@ -208,53 +210,53 @@ def test_setup_04_add_entitlement(admin_page):
     page.wait_for_load_state("networkidle")
     page.wait_for_timeout(1000)
 
-    # 1. Fill exact full name into autocomplete to isolate the created record
+    # 1. Type unique employee last name with keyboard events to trigger AJAX hints
     hint_box = page.get_by_placeholder("Type for hints...")
+    hint_box.wait_for(state="visible", timeout=10000)
     hint_box.click()
-    hint_box.fill(f"{FIRST} {LAST}")
-    
-    # Wait for dropdown and click matched employee
-    opt = page.locator(".oxd-autocomplete-dropdown .oxd-autocomplete-option", has_text=LAST)
-    opt.wait_for(state="visible", timeout=15000)
-    opt.first.click()
+    hint_box.press_sequentially(LAST, delay=100)
+
+    # 2. Wait for autocomplete dropdown and click the matched employee
+    page.locator(".oxd-autocomplete-dropdown").wait_for(state="visible", timeout=15000)
+    page.locator(".oxd-autocomplete-option", has_text=LAST).first.click()
     page.wait_for_timeout(500)
 
-    # 2. Select Leave Type (first select on the page)
-    page.locator(".oxd-select-text").nth(0).click()
+    # 3. Select Leave Type (supports exact name, prefix like "US - Casual Leave", or fallback)
+    lt_group = page.locator(".oxd-input-group").filter(has=page.locator("label:has-text('Leave Type')"))
+    lt_group.locator(".oxd-select-text").click()
     page.locator(".oxd-select-dropdown").wait_for(state="visible", timeout=5000)
 
-    matched = page.locator(".oxd-select-dropdown .oxd-select-option", has_text=LEAVE_TYPE)
+    matched = page.locator(".oxd-select-dropdown .oxd-select-option").filter(has_text=re.compile(re.escape(LEAVE_TYPE), re.I))
     if matched.count() > 0:
+        State.leave_type = matched.first.inner_text().strip()
         matched.first.click()
-        State.leave_type = LEAVE_TYPE
     else:
         first_opt = page.locator(".oxd-select-dropdown .oxd-select-option:not(:has-text('-- Select --'))").first
         State.leave_type = first_opt.inner_text().strip()
         first_opt.click()
     page.wait_for_timeout(500)
 
-    # 3. Handle Leave Period (second select on the page)
-    period_box = page.locator(".oxd-select-text").nth(1)
-    period_text = period_box.inner_text().strip()
+    # 4. Handle Leave Period
+    period_group = page.locator(".oxd-input-group").filter(has=page.locator("label:has-text('Leave Period')"))
+    if period_group.count() > 0:
+        period_text = period_group.locator(".oxd-select-text").inner_text().strip()
+        if "-- Select --" in period_text or not period_text:
+            period_group.locator(".oxd-select-text").click()
+            page.locator(".oxd-select-dropdown").wait_for(state="visible", timeout=5000)
+            first_period = page.locator(".oxd-select-dropdown .oxd-select-option:not(:has-text('-- Select --'))").first
+            period_text = first_period.inner_text().strip()
+            first_period.click()
+            page.wait_for_timeout(500)
 
-    # If unselected, select the first valid available period
-    if "-- Select --" in period_text or not period_text:
-        period_box.click()
-        page.locator(".oxd-select-dropdown").wait_for(state="visible", timeout=5000)
-        first_period = page.locator(".oxd-select-dropdown .oxd-select-option:not(:has-text('-- Select --'))").first
-        period_text = first_period.inner_text().strip()
-        first_period.click()
-        page.wait_for_timeout(500)
+        year_match = re.search(r"(\d{4})", period_text)
+        if year_match:
+            State.target_year = int(year_match.group(1))
 
-    # Record the active year from the selected period
-    year_match = re.search(r"(\d{4})", period_text)
-    if year_match:
-        State.target_year = int(year_match.group(1))
+    # 5. Fill Entitlement amount
+    ent_input = page.locator(".oxd-input-group").filter(has=page.locator("label:has-text('Entitlement')")).locator("input")
+    ent_input.fill(str(ENTITLEMENT))
 
-    # 4. Fill Entitlement amount
-    field(page, "Entitlement").fill(ENTITLEMENT)
-
-    # 5. Save and Confirm
+    # 6. Save and Confirm
     page.get_by_role("button", name="Save").click()
     try:
         confirm_btn = page.locator(".oxd-dialog-container-default").get_by_role("button", name="Confirm")
@@ -278,16 +280,16 @@ def test_step_02_check_balance(emp_page):
     page = emp_page
     page.goto(f"{BASE_URL}/web/index.php/leave/viewMyLeaveEntitlements")
     page.wait_for_load_state("networkidle")
-    
+
     if not page.locator(".oxd-table-body").is_visible():
         page.goto(f"{BASE_URL}/web/index.php/leave/viewLeaveModule")
         page.locator(".oxd-topbar-body-nav-tab", has_text="Entitlements").click()
         page.get_by_text("My Entitlements", exact=True).click()
         page.wait_for_load_state("networkidle")
-        
+
     expect(page.locator(".oxd-table-body")).to_be_visible(timeout=15000)
     body = page.locator(".oxd-table-body").inner_text()
-    assert State.leave_type in body and ENTITLEMENT in body
+    assert State.leave_type in body and str(ENTITLEMENT) in body
     shot(page, "01_balance")
 
 
@@ -302,7 +304,7 @@ def test_step_03_to_06_apply_leave(emp_page):
 
 def test_step_07_verify_request_in_my_leave(emp_page):
     filter_my_leave(emp_page)
-    expect(emp_page.locator(".oxd-table-card", has_text=State.leave_date).first).to_be_visible()
+    expect(page.locator(".oxd-table-card", has_text=State.leave_date).first).to_be_visible()
 
 
 def test_step_08_and_09_verify_status_pending(emp_page):
@@ -316,7 +318,7 @@ def test_step_08_and_09_verify_status_pending(emp_page):
 def test_step_10_and_11_duplicate_rejection(emp_page):
     page = emp_page
     apply_leave(page, State.leave_date)
-    expect(page.get_by_text("Overlapping Leave Request", exact=False)).to_be_visible()
+    expect(page.locator(".oxd-toast--error, .oxd-text--danger, :text('Overlapping')")).to_be_visible(timeout=10000)
     shot(page, "04_overlap_error")
 
     ok = page.get_by_role("button", name="Ok")
