@@ -6,9 +6,10 @@ from datetime import date, timedelta
 from playwright.sync_api import sync_playwright, expect
 
 # ---------------------------------------------------------------- CONFIG
-BASE = os.getenv("OHRM_URL", "http://localhost:4201")
+LOGIN_URL = os.getenv("OHRM_LOGIN_URL", "http://localhost:4201/web/index.php/auth/login")
+BASE_URL = LOGIN_URL.split("/web/")[0]  # http://localhost:4201
 ADMIN_USER = os.getenv("OHRM_ADMIN_USER", "Admin")
-ADMIN_PASS = os.getenv("OHRM_ADMIN_PASS", "admin123")
+ADMIN_PASS = os.getenv("OHRM_ADMIN_PASS", "Admin@123098")
 LEAVE_TYPE = os.getenv("OHRM_LEAVE_TYPE", "Casual Leave")
 ENTITLEMENT = os.getenv("OHRM_ENTITLEMENT", "10")
 HEADLESS = os.getenv("HEADLESS", "1") == "1"
@@ -18,7 +19,7 @@ SUF = str(int(time.time()))[-6:]
 FIRST, LAST = "Auto", f"Emp{SUF}"
 EMP_USER, EMP_PASS = f"auto{SUF}", "Xk9#mPq2$vLw"
 
-expect.set_options(timeout=15000)
+expect.set_options(timeout=20000)
 os.makedirs("screenshots", exist_ok=True)
 
 
@@ -42,16 +43,32 @@ def field(page, label):
     )
 
 
+def wait_for_server(page, url, retries=15, delay=4):
+    """Ensure the login page is reachable before starting tests."""
+    print(f"\n[INIT] Connecting to {url}...")
+    for i in range(retries):
+        try:
+            resp = page.goto(url, timeout=10000)
+            if resp and resp.status < 400:
+                print(f"[INIT] Server reachable on attempt {i+1} (Status {resp.status})")
+                return True
+        except Exception as e:
+            print(f"[INIT] Attempt {i+1}/{retries} waiting: {e}. Retrying in {delay}s...")
+            time.sleep(delay)
+    return False
+
+
 def login(page, user, pwd):
-    page.goto(f"{BASE}/web/index.php/auth/login")
+    page.goto(LOGIN_URL, wait_until="domcontentloaded")
+    page.get_by_placeholder("Username").wait_for(state="visible", timeout=20000)
     page.get_by_placeholder("Username").fill(user)
     page.get_by_placeholder("Password").fill(pwd)
     page.get_by_role("button", name="Login").click()
-    expect(page).to_have_url(re.compile("dashboard"))
+    expect(page).to_have_url(re.compile("dashboard"), timeout=20000)
 
 
 def detect_date_fmt(page):
-    page.goto(f"{BASE}/web/index.php/leave/applyLeave")
+    page.goto(f"{BASE_URL}/web/index.php/leave/applyLeave")
     page.locator(".oxd-select-text").first.click()
     page.get_by_role("option", name=LEAVE_TYPE, exact=True).click()
     ph = page.locator(".oxd-date-input input").first.get_attribute("placeholder") or "yyyy-dd-mm"
@@ -70,7 +87,7 @@ def set_dates(page, d):
 
 
 def apply_leave(page, d):
-    page.goto(f"{BASE}/web/index.php/leave/applyLeave")
+    page.goto(f"{BASE_URL}/web/index.php/leave/applyLeave")
     page.locator(".oxd-select-text").first.click()
     page.get_by_role("option", name=LEAVE_TYPE, exact=True).click()
     set_dates(page, d)
@@ -79,7 +96,7 @@ def apply_leave(page, d):
 
 
 def filter_my_leave(page, d=None, status="Pending Approval"):
-    page.goto(f"{BASE}/web/index.php/leave/viewMyLeaveList")
+    page.goto(f"{BASE_URL}/web/index.php/leave/viewMyLeaveList")
     page.locator(".oxd-select-text").nth(0).click()
     page.get_by_role("option", name=status).click()
     if d:
@@ -88,11 +105,14 @@ def filter_my_leave(page, d=None, status="Pending Approval"):
     page.wait_for_timeout(1000)
 
 
-# ---------------------------------------------------------------- FIXTURES (Shared Session)
+# ---------------------------------------------------------------- FIXTURES
 @pytest.fixture(scope="session")
 def browser_instance():
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=HEADLESS, slow_mo=0 if HEADLESS else 200)
+        browser = p.chromium.launch(
+            headless=HEADLESS,
+            args=["--no-sandbox", "--disable-dev-shm-usage"]
+        )
         yield browser
         browser.close()
 
@@ -118,21 +138,23 @@ def target_date():
     return future_workday()
 
 
-# Shared state holder for test cases
 class SessionState:
     formatted_date = ""
 
 
-# ---------------------------------------------------------------- ADMIN SETUP TESTS
+# ---------------------------------------------------------------- PYTEST CASES
 def test_setup_01_admin_login(admin_page):
-    """Admin logs into OrangeHRM dashboard."""
+    """Admin connects and logs in."""
+    is_ready = wait_for_server(admin_page, LOGIN_URL)
+    if not is_ready:
+        pytest.fail(f"Could not connect to {LOGIN_URL}. Container might be down or not ready.")
     login(admin_page, ADMIN_USER, ADMIN_PASS)
 
 
 def test_setup_02_create_employee(admin_page):
-    """Admin creates employee with login credentials."""
+    """Admin creates test employee with ESS login credentials."""
     page = admin_page
-    page.goto(f"{BASE}/web/index.php/pim/addEmployee")
+    page.goto(f"{BASE_URL}/web/index.php/pim/addEmployee")
     page.get_by_placeholder("First Name").fill(FIRST)
     page.get_by_placeholder("Last Name").fill(LAST)
     page.locator(".oxd-switch-input").click()
@@ -147,32 +169,32 @@ def test_setup_02_create_employee(admin_page):
         save = page.get_by_role("button", name="Save")
         save.click()
         try:
-            page.wait_for_url(re.compile("viewPersonalDetails"), timeout=10000)
+            page.wait_for_url(re.compile("viewPersonalDetails"), timeout=15000)
             return
         except Exception:
             shot(page, f"err_add_employee_try{attempt}")
             page.wait_for_timeout(2000)
-    raise AssertionError("Employee was not created - see screenshots/err_add_employee_try*.png")
+    raise AssertionError("Employee was not created - see screenshots")
 
 
 def test_setup_03_ensure_leave_type(admin_page):
-    """Admin ensures leave type exists."""
+    """Ensure configured leave type exists."""
     page = admin_page
-    page.goto(f"{BASE}/web/index.php/leave/leaveTypeList")
+    page.goto(f"{BASE_URL}/web/index.php/leave/leaveTypeList")
     page.wait_for_load_state("networkidle")
     page.wait_for_timeout(2000)
     if page.locator(".oxd-table-card", has_text=LEAVE_TYPE).count() == 0:
-        page.goto(f"{BASE}/web/index.php/leave/defineLeaveType")
+        page.goto(f"{BASE_URL}/web/index.php/leave/defineLeaveType")
         field(page, "Name").fill(LEAVE_TYPE)
         page.get_by_role("button", name="Save").click()
         page.wait_for_url(re.compile("leaveTypeList"), timeout=15000)
 
 
 def test_setup_04_add_entitlement(admin_page, target_date):
-    """Admin assigns leave entitlement to the new employee."""
+    """Admin assigns quota/entitlement to newly created employee."""
     page = admin_page
     year = target_date.year
-    page.goto(f"{BASE}/web/index.php/leave/addLeaveEntitlement")
+    page.goto(f"{BASE_URL}/web/index.php/leave/addLeaveEntitlement")
     page.get_by_placeholder("Type for hints...").fill(f"{FIRST} {LAST}")
     page.locator(".oxd-autocomplete-option", has_text=LAST).first.click()
     page.locator(".oxd-select-text").nth(0).click()
@@ -189,16 +211,15 @@ def test_setup_04_add_entitlement(admin_page, target_date):
     shot(page, "00_admin_entitlement")
 
 
-# ---------------------------------------------------------------- EMPLOYEE TESTS (STEPS 1-11)
 def test_step_01_employee_login(emp_page):
-    """Step 1: Employee login."""
+    """Step 1: Employee logs in."""
     login(emp_page, EMP_USER, EMP_PASS)
 
 
 def test_step_02_check_balance(emp_page):
-    """Step 2: Check available leave balance."""
+    """Step 2: Employee verifies leave balance."""
     page = emp_page
-    page.goto(f"{BASE}/web/index.php/leave/viewLeaveModule")
+    page.goto(f"{BASE_URL}/web/index.php/leave/viewLeaveModule")
     page.locator(".oxd-topbar-body-nav-tab", has_text="Entitlements").click()
     page.get_by_text("My Entitlements", exact=True).click()
     page.wait_for_load_state("networkidle")
@@ -209,7 +230,7 @@ def test_step_02_check_balance(emp_page):
 
 
 def test_step_03_to_06_apply_leave(emp_page, target_date):
-    """Steps 3-6: Apply for future leave and submit."""
+    """Steps 3-6: Apply for future workday leave."""
     page = emp_page
     SessionState.formatted_date = target_date.strftime(detect_date_fmt(page))
     apply_leave(page, SessionState.formatted_date)
@@ -218,13 +239,13 @@ def test_step_03_to_06_apply_leave(emp_page, target_date):
 
 
 def test_step_07_verify_request_in_my_leave(emp_page):
-    """Step 7: Verify request appears in My Leave list."""
+    """Step 7: Verify submitted request is displayed."""
     filter_my_leave(emp_page)
     expect(emp_page.locator(".oxd-table-card", has_text=SessionState.formatted_date).first).to_be_visible()
 
 
 def test_step_08_and_09_verify_status_pending(emp_page):
-    """Steps 8-9: Filter by date & verify status is 'Pending Approval'."""
+    """Steps 8-9: Verify leave status is Pending Approval."""
     filter_my_leave(emp_page, SessionState.formatted_date, "Pending Approval")
     row = emp_page.locator(".oxd-table-card", has_text=SessionState.formatted_date)
     expect(row).to_have_count(1)
@@ -233,7 +254,7 @@ def test_step_08_and_09_verify_status_pending(emp_page):
 
 
 def test_step_10_and_11_duplicate_rejection(emp_page):
-    """Steps 10-11: Submit duplicate request and verify overlap rejection."""
+    """Steps 10-11: Attempt duplicate booking and verify overlap validation."""
     page = emp_page
     apply_leave(page, SessionState.formatted_date)
     expect(page.get_by_text("Overlapping Leave Request", exact=False)).to_be_visible()

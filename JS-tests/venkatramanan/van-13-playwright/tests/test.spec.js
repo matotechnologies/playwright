@@ -1,28 +1,22 @@
-/**
- * OrangeHRM end-to-end leave test (JavaScript + Playwright Test) - default port 4201
- *
- * Flow:
- *   SETUP (Admin)  : create new employee with login -> ensure leave type -> add entitlement
- *   TEST (Employee): the 11 steps
- */
 const base = require('@playwright/test');
 const fs = require('fs');
 
 const test = base.test;
-const expect = base.expect.configure({ timeout: 15000 });
+const expect = base.expect.configure({ timeout: 20000 });
 
-const BASE = process.env.OHRM_URL || 'http://localhost:4201';
+const BASE_URL = process.env.OHRM_LOGIN_URL || 'http://localhost:4201/web/index.php/auth/login';
+const ROOT_URL = BASE_URL.split('/web/')[0]; // http://localhost:4201
 const ADMIN_USER = process.env.OHRM_ADMIN_USER || 'Admin';
-const ADMIN_PASS = process.env.OHRM_ADMIN_PASS || 'admin123';
+const ADMIN_PASS = process.env.OHRM_ADMIN_PASS || 'Admin@123098';
 const LEAVE_TYPE = process.env.OHRM_LEAVE_TYPE || 'Casual Leave';
 const ENTITLEMENT = process.env.OHRM_ENTITLEMENT || '10';
 const REASON = 'Family function - automation test';
 
-const SUF = String(Date.now()).slice(-6); // unique per run
+const SUF = String(Date.now()).slice(-6);
 const FIRST = 'Auto';
 const LAST = `Emp${SUF}`;
 const EMP_USER = `auto${SUF}`;
-const EMP_PASS = 'Xk9#mPq2$vLw'; // strong password (avoids "guessable" hint)
+const EMP_PASS = 'Xk9#mPq2$vLw';
 
 fs.mkdirSync('screenshots', { recursive: true });
 
@@ -42,57 +36,42 @@ const field = (page, label) =>
     .locator('input');
 
 async function login(page, user, pwd) {
-  await page.goto(`${BASE}/web/index.php/auth/login`);
+  await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
+  await page.getByPlaceholder('Username').waitFor({ state: 'visible', timeout: 20000 });
   await page.getByPlaceholder('Username').fill(user);
   await page.getByPlaceholder('Password').fill(pwd);
   await page.getByRole('button', { name: 'Login' }).click();
-  await expect(page).toHaveURL(/dashboard/);
+  await expect(page).toHaveURL(/dashboard/, { timeout: 20000 });
 }
 
-// ---------------------------------------------------------------- ADMIN SETUP
 async function createEmployee(page) {
-  const apiLog = [];
-  page.on('response', async (r) => {
-    const m = r.request().method();
-    if (r.url().includes('/api/v2/') && (m === 'POST' || m === 'PUT')) {
-      let body = '';
-      try { body = (await r.text()).slice(0, 300); } catch (e) { /* ignore */ }
-      apiLog.push(`${m} ${r.url().split('/api/v2/')[1]} -> ${r.status()} ${body}`);
-    }
-  });
-
-  await page.goto(`${BASE}/web/index.php/pim/addEmployee`);
+  await page.goto(`${ROOT_URL}/web/index.php/pim/addEmployee`);
   await page.getByPlaceholder('First Name').fill(FIRST);
   await page.getByPlaceholder('Last Name').fill(LAST);
-  await page.locator('.oxd-switch-input').click(); // Create Login Details
+  await page.locator('.oxd-switch-input').click();
   await field(page, 'Username').fill(EMP_USER);
   await field(page, 'Password').fill(EMP_PASS);
   await field(page, 'Confirm Password').fill(EMP_PASS);
   await page.keyboard.press('Tab');
   await page.waitForLoadState('networkidle');
-  await page.waitForTimeout(2500); // username uniqueness API
+  await page.waitForTimeout(2500);
 
   for (const attempt of [1, 2]) {
     const save = page.getByRole('button', { name: 'Save' });
-    console.log(`   Save try ${attempt}: disabled=${await save.isDisabled()}`);
     await save.click();
     try {
-      await page.waitForURL(/viewPersonalDetails/, { timeout: 10000 });
+      await page.waitForURL(/viewPersonalDetails/, { timeout: 15000 });
       return;
     } catch (e) {
       await shot(page, `err_add_employee_try${attempt}`);
-      console.log('   Field messages:', await page.locator('.oxd-input-field-error-message').allInnerTexts());
-      console.log('   API calls so far:');
-      apiLog.forEach((l) => console.log('     ', l));
       await page.waitForTimeout(2000);
     }
   }
-  throw new Error('Employee was not created - see screenshots/err_add_employee_try*.png');
+  throw new Error('Employee was not created - see screenshots');
 }
 
-// ---------------------------------------------------------------- HELPERS (employee)
 async function detectDate(page) {
-  await page.goto(`${BASE}/web/index.php/leave/applyLeave`);
+  await page.goto(`${ROOT_URL}/web/index.php/leave/applyLeave`);
   await page.locator('.oxd-select-text').first().click();
   await page.getByRole('option', { name: LEAVE_TYPE, exact: true }).click();
   const ph = (await page.locator('.oxd-date-input input').first().getAttribute('placeholder')) || 'yyyy-dd-mm';
@@ -108,14 +87,14 @@ async function setDates(page, d) {
     await box.click();
     await box.press('Control+a');
     await box.fill(d);
-    await box.press('Tab'); // close calendar popup
+    await box.press('Tab');
   }
-  await page.locator('h5, h6').first().click(); // neutral click
+  await page.locator('h5, h6').first().click();
   await page.waitForTimeout(500);
 }
 
 async function applyLeave(page, d) {
-  await page.goto(`${BASE}/web/index.php/leave/applyLeave`);
+  await page.goto(`${ROOT_URL}/web/index.php/leave/applyLeave`);
   await page.locator('.oxd-select-text').first().click();
   await page.getByRole('option', { name: LEAVE_TYPE, exact: true }).click();
   await setDates(page, d);
@@ -124,7 +103,7 @@ async function applyLeave(page, d) {
 }
 
 async function filterMyLeave(page, d, status = 'Pending Approval') {
-  await page.goto(`${BASE}/web/index.php/leave/viewMyLeaveList`);
+  await page.goto(`${ROOT_URL}/web/index.php/leave/viewMyLeaveList`);
   await page.locator('.oxd-select-text').nth(0).click();
   await page.getByRole('option', { name: status }).click();
   if (d) await setDates(page, d);
@@ -132,14 +111,12 @@ async function filterMyLeave(page, d, status = 'Pending Approval') {
   await page.waitForTimeout(1000);
 }
 
-// ---------------------------------------------------------------- TESTS
 test.describe.serial('OrangeHRM - Setup + Employee leave flow', () => {
   test.setTimeout(180000);
   let adminPage, empPage, leaveDate;
 
   test.beforeAll(async ({ browser }) => {
-    console.log('Running against:', BASE);
-    adminPage = await (await browser.newContext()).newPage(); // separate sessions
+    adminPage = await (await browser.newContext()).newPage();
     empPage = await (await browser.newContext()).newPage();
   });
 
@@ -148,32 +125,27 @@ test.describe.serial('OrangeHRM - Setup + Employee leave flow', () => {
     await empPage.context().close();
   });
 
-  // ------------------------------------------------------------ ADMIN SETUP
-  test('SETUP-1 Admin login + create employee with login details', async () => {
+  test('SETUP-1 Admin login + create employee', async () => {
     await login(adminPage, ADMIN_USER, ADMIN_PASS);
-    console.log(`   Creating employee ${FIRST} ${LAST} (user: ${EMP_USER})`);
     await createEmployee(adminPage);
   });
 
   test('SETUP-2 Ensure leave type exists', async () => {
     const page = adminPage;
-    await page.goto(`${BASE}/web/index.php/leave/leaveTypeList`);
+    await page.goto(`${ROOT_URL}/web/index.php/leave/leaveTypeList`);
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(2000);
     if ((await page.locator('.oxd-table-card', { hasText: LEAVE_TYPE }).count()) === 0) {
-      console.log('   Leave type not found, creating...');
-      await page.goto(`${BASE}/web/index.php/leave/defineLeaveType`);
+      await page.goto(`${ROOT_URL}/web/index.php/leave/defineLeaveType`);
       await field(page, 'Name').fill(LEAVE_TYPE);
       await page.getByRole('button', { name: 'Save' }).click();
       await page.waitForURL(/leaveTypeList/, { timeout: 15000 });
-    } else {
-      console.log('   Leave type already exists, skipping');
     }
   });
 
-  test('SETUP-3 Add entitlement for the new employee', async () => {
+  test('SETUP-3 Add entitlement for new employee', async () => {
     const page = adminPage;
-    await page.goto(`${BASE}/web/index.php/leave/addLeaveEntitlement`);
+    await page.goto(`${ROOT_URL}/web/index.php/leave/addLeaveEntitlement`);
     await page.getByPlaceholder('Type for hints...').fill(`${FIRST} ${LAST}`);
     await page.locator('.oxd-autocomplete-option', { hasText: LAST }).first().click();
     await page.locator('.oxd-select-text').nth(0).click();
@@ -187,38 +159,35 @@ test.describe.serial('OrangeHRM - Setup + Employee leave flow', () => {
     await shot(page, '00_admin_entitlement');
   });
 
-  // ------------------------------------------------------------ EMPLOYEE FLOW
   test('1. Login as employee', async () => {
     await login(empPage, EMP_USER, EMP_PASS);
   });
 
-  test('2. Check available leave balance', async () => {
-    await empPage.goto(`${BASE}/web/index.php/leave/viewLeaveModule`);
+  test('2. Check leave balance', async () => {
+    await empPage.goto(`${ROOT_URL}/web/index.php/leave/viewLeaveModule`);
     await empPage.locator('.oxd-topbar-body-nav-tab', { hasText: 'Entitlements' }).click();
     await empPage.getByText('My Entitlements', { exact: true }).click();
     await empPage.waitForLoadState('networkidle');
     await expect(empPage.locator('.oxd-table-body')).toBeVisible();
     const body = (await empPage.locator('.oxd-table-body').innerText()).replace(/\n/g, ' | ');
-    console.log('   Entitlements:', body);
     expect(body).toContain(LEAVE_TYPE);
     expect(body).toContain(ENTITLEMENT);
     await shot(empPage, '01_balance');
   });
 
-  test('3-6. Apply leave (future date, type, reason) and submit', async () => {
+  test('3-6. Apply leave and submit', async () => {
     leaveDate = await detectDate(empPage);
-    console.log('   Leave date:', leaveDate);
     await applyLeave(empPage, leaveDate);
     await expect(empPage.locator('.oxd-toast')).toContainText('Success');
     await shot(empPage, '02_applied');
   });
 
-  test('7. Request appears in My Leave', async () => {
+  test('7. Verify request in My Leave', async () => {
     await filterMyLeave(empPage);
     await expect(empPage.locator('.oxd-table-card', { hasText: leaveDate }).first()).toBeVisible();
   });
 
-  test('8-9. Filter by date + status, verify Pending Approval', async () => {
+  test('8-9. Filter and verify status Pending Approval', async () => {
     await filterMyLeave(empPage, leaveDate, 'Pending Approval');
     const row = empPage.locator('.oxd-table-card', { hasText: leaveDate });
     await expect(row).toHaveCount(1);
@@ -226,7 +195,7 @@ test.describe.serial('OrangeHRM - Setup + Employee leave flow', () => {
     await shot(empPage, '03_status');
   });
 
-  test('10-11. Duplicate request for same date is rejected', async () => {
+  test('10-11. Duplicate request rejection', async () => {
     await applyLeave(empPage, leaveDate);
     await expect(empPage.getByText('Overlapping Leave Request', { exact: false })).toBeVisible();
     await shot(empPage, '04_overlap_error');
