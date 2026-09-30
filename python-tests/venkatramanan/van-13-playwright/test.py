@@ -26,6 +26,7 @@ os.makedirs("screenshots", exist_ok=True)
 class State:
     leave_type = LEAVE_TYPE
     leave_date = ""
+    target_year = None
 
 
 # ---------------------------------------------------------------- HELPERS
@@ -33,9 +34,14 @@ def shot(page, name):
     page.screenshot(path=f"screenshots/{name}.png")
 
 
-def future_workday(days=14):
+def future_workday(days=14, year=None):
     d = date.today() + timedelta(days=days)
-    while d.weekday() >= 5:
+    if year:
+        try:
+            d = d.replace(year=year)
+        except ValueError:
+            d = date(year, d.month, 28)
+    while d.weekday() >= 5:  # Skip Sat/Sun
         d += timedelta(days=1)
     return d
 
@@ -43,13 +49,13 @@ def future_workday(days=14):
 def field(page, label):
     return (
         page.locator(".oxd-input-group")
-        .filter(has=page.locator(f'label:text-is("{label}")'))
+        .filter(has=page.locator("label", has_text=re.compile(rf"^\s*{re.escape(label)}", re.I)))
         .locator("input")
     )
 
 
-def wait_for_server(page, url, retries=15, delay=4):
-    for i in range(retries):
+def wait_for_server(page, url, retries=15, delay=3):
+    for _ in range(retries):
         try:
             resp = page.goto(url, timeout=10000)
             if resp and resp.status < 400:
@@ -90,14 +96,13 @@ def apply_leave(page, d):
     page.goto(f"{BASE_URL}/web/index.php/leave/applyLeave")
     page.wait_for_load_state("networkidle")
     
-    # Select Leave Type
-    lt_group = page.locator(".oxd-input-group").filter(has=page.locator('label:has-text("Leave Type")'))
-    lt_group.locator(".oxd-select-text").click()
+    # Open leave type dropdown
+    page.locator(".oxd-select-text").first.click()
     page.locator(".oxd-select-dropdown").wait_for(state="visible", timeout=5000)
     
-    opt = page.locator(".oxd-select-dropdown .oxd-select-option").filter(has_text=State.leave_type)
-    if opt.count() > 0:
-        opt.first.click()
+    matched = page.locator(".oxd-select-dropdown .oxd-select-option", has_text=State.leave_type)
+    if matched.count() > 0:
+        matched.first.click()
     else:
         page.locator(".oxd-select-dropdown .oxd-select-option:not(:has-text('-- Select --'))").first.click()
 
@@ -110,9 +115,9 @@ def filter_my_leave(page, d=None, status="Pending Approval"):
     page.goto(f"{BASE_URL}/web/index.php/leave/viewMyLeaveList")
     page.wait_for_load_state("networkidle")
     
-    # Set status
-    page.locator(".oxd-select-text").nth(0).click()
-    page.locator(".oxd-select-dropdown .oxd-select-option", has_text=status).click()
+    # Set status filter
+    page.locator(".oxd-select-text").first.click()
+    page.locator(".oxd-select-dropdown .oxd-select-option", has_text=status).first.click()
     
     if d:
         set_dates(page, d)
@@ -148,11 +153,6 @@ def emp_page(browser_instance):
     context.close()
 
 
-@pytest.fixture(scope="session")
-def target_date():
-    return future_workday()
-
-
 # ---------------------------------------------------------------- TESTS
 def test_setup_01_admin_login(admin_page):
     if not wait_for_server(admin_page, LOGIN_URL):
@@ -171,11 +171,10 @@ def test_setup_02_create_employee(admin_page):
     field(page, "Confirm Password").fill(EMP_PASS)
     page.keyboard.press("Tab")
     page.wait_for_load_state("networkidle")
-    page.wait_for_timeout(2500)
+    page.wait_for_timeout(2000)
 
     for attempt in (1, 2):
-        save = page.get_by_role("button", name="Save")
-        save.click()
+        page.get_by_role("button", name="Save").click()
         try:
             page.wait_for_url(re.compile("viewPersonalDetails"), timeout=15000)
             return
@@ -187,56 +186,70 @@ def test_setup_02_create_employee(admin_page):
 
 def test_setup_03_ensure_leave_type(admin_page):
     page = admin_page
-    page.goto(f"{BASE_URL}/web/index.php/leave/defineLeaveType")
+    page.goto(f"{BASE_URL}/web/index.php/leave/leaveTypeList")
     page.wait_for_load_state("networkidle")
-    field(page, "Name").fill(LEAVE_TYPE)
-    page.get_by_role("button", name="Save").click()
-    
-    try:
-        page.wait_for_url(re.compile("leaveTypeList"), timeout=5000)
-    except Exception:
-        pass
+    page.wait_for_timeout(1000)
+
+    # If LEAVE_TYPE does not exist, define it
+    if page.locator(".oxd-table-card", has_text=LEAVE_TYPE).count() == 0:
+        page.goto(f"{BASE_URL}/web/index.php/leave/defineLeaveType")
+        page.wait_for_load_state("networkidle")
+        field(page, "Name").fill(LEAVE_TYPE)
+        page.get_by_role("button", name="Save").click()
+        try:
+            page.wait_for_url(re.compile("leaveTypeList"), timeout=10000)
+        except Exception:
+            pass
 
 
-def test_setup_04_add_entitlement(admin_page, target_date):
+def test_setup_04_add_entitlement(admin_page):
     page = admin_page
     page.goto(f"{BASE_URL}/web/index.php/leave/addLeaveEntitlement")
     page.wait_for_load_state("networkidle")
+    page.wait_for_timeout(1000)
 
-    # 1. Type employee name with keystroke delays for debounce
+    # 1. Fill exact full name into autocomplete to isolate the created record
     hint_box = page.get_by_placeholder("Type for hints...")
-    hint_box.focus()
-    hint_box.type(FIRST, delay=100)
+    hint_box.click()
+    hint_box.fill(f"{FIRST} {LAST}")
     
-    # Wait for autocomplete dropdown and click option
-    page.locator(".oxd-autocomplete-dropdown").wait_for(state="visible", timeout=10000)
-    page.locator(".oxd-autocomplete-option", has_text=LAST).first.click()
+    # Wait for dropdown and click matched employee
+    opt = page.locator(".oxd-autocomplete-dropdown .oxd-autocomplete-option", has_text=LAST)
+    opt.wait_for(state="visible", timeout=15000)
+    opt.first.click()
     page.wait_for_timeout(500)
 
-    # 2. Select Leave Type
-    lt_group = page.locator(".oxd-input-group").filter(has=page.locator('label:has-text("Leave Type")'))
-    lt_group.locator(".oxd-select-text").click()
+    # 2. Select Leave Type (first select on the page)
+    page.locator(".oxd-select-text").nth(0).click()
     page.locator(".oxd-select-dropdown").wait_for(state="visible", timeout=5000)
-    
-    # Match LEAVE_TYPE or use first available active leave type
-    matched = page.locator(".oxd-select-dropdown .oxd-select-option").filter(has_text=LEAVE_TYPE)
+
+    matched = page.locator(".oxd-select-dropdown .oxd-select-option", has_text=LEAVE_TYPE)
     if matched.count() > 0:
         matched.first.click()
         State.leave_type = LEAVE_TYPE
     else:
-        valid_opts = page.locator(".oxd-select-dropdown .oxd-select-option:not(:has-text('-- Select --'))")
-        State.leave_type = valid_opts.first.inner_text().strip()
-        valid_opts.first.click()
+        first_opt = page.locator(".oxd-select-dropdown .oxd-select-option:not(:has-text('-- Select --'))").first
+        State.leave_type = first_opt.inner_text().strip()
+        first_opt.click()
     page.wait_for_timeout(500)
 
-    # 3. Handle Leave Period if unselected
-    period_group = page.locator(".oxd-input-group").filter(has=page.locator('label:has-text("Leave Period")'))
-    if period_group.count() > 0:
-        p_text = period_group.locator(".oxd-select-text").inner_text()
-        if "-- Select --" in p_text or not p_text.strip():
-            period_group.locator(".oxd-select-text").click()
-            page.locator(".oxd-select-dropdown").wait_for(state="visible", timeout=5000)
-            page.locator(".oxd-select-dropdown .oxd-select-option:not(:has-text('-- Select --'))").first.click()
+    # 3. Handle Leave Period (second select on the page)
+    period_box = page.locator(".oxd-select-text").nth(1)
+    period_text = period_box.inner_text().strip()
+
+    # If unselected, select the first valid available period
+    if "-- Select --" in period_text or not period_text:
+        period_box.click()
+        page.locator(".oxd-select-dropdown").wait_for(state="visible", timeout=5000)
+        first_period = page.locator(".oxd-select-dropdown .oxd-select-option:not(:has-text('-- Select --'))").first
+        period_text = first_period.inner_text().strip()
+        first_period.click()
+        page.wait_for_timeout(500)
+
+    # Record the active year from the selected period
+    year_match = re.search(r"(\d{4})", period_text)
+    if year_match:
+        State.target_year = int(year_match.group(1))
 
     # 4. Fill Entitlement amount
     field(page, "Entitlement").fill(ENTITLEMENT)
@@ -251,7 +264,7 @@ def test_setup_04_add_entitlement(admin_page, target_date):
         pass
 
     try:
-        page.wait_for_url(re.compile("viewLeaveEntitlements"), timeout=10000)
+        page.wait_for_url(re.compile("viewLeaveEntitlements"), timeout=15000)
     except Exception:
         expect(page.locator(".oxd-toast")).to_contain_text("Success")
     shot(page, "00_admin_entitlement")
@@ -263,19 +276,25 @@ def test_step_01_employee_login(emp_page):
 
 def test_step_02_check_balance(emp_page):
     page = emp_page
-    page.goto(f"{BASE_URL}/web/index.php/leave/viewLeaveModule")
-    page.locator(".oxd-topbar-body-nav-tab", has_text="Entitlements").click()
-    page.get_by_text("My Entitlements", exact=True).click()
+    page.goto(f"{BASE_URL}/web/index.php/leave/viewMyLeaveEntitlements")
     page.wait_for_load_state("networkidle")
-    expect(page.locator(".oxd-table-body")).to_be_visible()
+    
+    if not page.locator(".oxd-table-body").is_visible():
+        page.goto(f"{BASE_URL}/web/index.php/leave/viewLeaveModule")
+        page.locator(".oxd-topbar-body-nav-tab", has_text="Entitlements").click()
+        page.get_by_text("My Entitlements", exact=True).click()
+        page.wait_for_load_state("networkidle")
+        
+    expect(page.locator(".oxd-table-body")).to_be_visible(timeout=15000)
     body = page.locator(".oxd-table-body").inner_text()
     assert State.leave_type in body and ENTITLEMENT in body
     shot(page, "01_balance")
 
 
-def test_step_03_to_06_apply_leave(emp_page, target_date):
+def test_step_03_to_06_apply_leave(emp_page):
     page = emp_page
-    State.leave_date = target_date.strftime(detect_date_fmt(page))
+    target = future_workday(14, year=State.target_year)
+    State.leave_date = target.strftime(detect_date_fmt(page))
     apply_leave(page, State.leave_date)
     expect(page.locator(".oxd-toast")).to_contain_text("Success")
     shot(page, "02_applied")
