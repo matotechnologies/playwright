@@ -1,0 +1,13 @@
+{
+  "name": "van-13-playwright-js",
+  "version": "1.0.0",
+  "description": "OrangeHRM Playwright JS Tests - Task VAN-13",
+  "main": "playwright.config.js",
+  "scripts": {
+    "test": "npx playwright test tests/test.spec.js",
+    "test:headed": "npx playwright test tests/test.spec.js --headed"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0"
+  }
+}
