@@ -65,6 +65,12 @@ def wait_for_server(page, url, retries=15, delay=3):
     return False
 
 
+def wait_for_table(page):
+    """List page is ready when rows are shown or 'No Records Found' appears."""
+    rows = page.locator(".oxd-table-card").first
+    expect(rows.or_(page.get_by_text("No Records Found")).first).to_be_visible()
+
+
 def login(page, user, pwd):
     page.goto(LOGIN_URL, wait_until="domcontentloaded")
     page.get_by_placeholder("Username").wait_for(state="visible")
@@ -93,14 +99,13 @@ def apply_leave(page, d):
     leave_select.click()
 
     options = page.locator(".oxd-select-dropdown .oxd-select-option:not(:has-text('-- Select --'))")
-    expect(options.first).to_be_visible()  # options are loaded before we count/filter
+    expect(options.first).to_be_visible()  # options loaded before count/filter
 
     matched = options.filter(has_text=re.compile(re.escape(State.leave_type), re.I))
     chosen = matched.first if matched.count() > 0 else options.first
     chosen_text = chosen.inner_text().strip()
     chosen.click()
-
-    expect(leave_select).to_have_text(chosen_text)  # replaces networkidle
+    expect(leave_select).to_have_text(chosen_text)
 
     # 2. Fill Dates and Reason
     set_dates(page, d)
@@ -109,15 +114,14 @@ def apply_leave(page, d):
     # 3. Click Apply
     page.locator("button[type='submit'], button:has-text('Apply')").first.click()
 
+
 def filter_my_leave(page, d=None):
     page.goto(f"{BASE_URL}/web/index.php/leave/viewMyLeaveList")
-    page.wait_for_load_state("networkidle")
 
     if d:
         set_dates(page, d)
 
     page.locator("button[type='submit'], button:has-text('Search')").first.click()
-    page.wait_for_load_state("networkidle")
 
 
 # ---------------------------------------------------------------- FIXTURES
@@ -165,7 +169,6 @@ def test_setup_02_create_employee(admin_page):
     field(page, "Password").fill(EMP_PASS)
     field(page, "Confirm Password").fill(EMP_PASS)
     page.keyboard.press("Tab")
-    page.wait_for_load_state("networkidle")
 
     for attempt in (1, 2):
         page.get_by_role("button", name="Save").click()
@@ -182,7 +185,7 @@ def test_setup_03_ensure_leave_type(admin_page):
 
     # 1. Define Leave Period
     page.goto(f"{BASE_URL}/web/index.php/leave/defineLeavePeriod")
-    page.wait_for_load_state("networkidle")
+    page.locator(".oxd-form").first.wait_for(state="visible")
     save_period_btn = page.locator("button[type='submit'], button:has-text('Save')").first
     if save_period_btn.is_visible():
         selects = page.locator(".oxd-select-text")
@@ -196,13 +199,12 @@ def test_setup_03_ensure_leave_type(admin_page):
 
     # 2. Ensure Leave Type exists
     page.goto(f"{BASE_URL}/web/index.php/leave/leaveTypeList")
-    page.wait_for_load_state("networkidle")
+    wait_for_table(page)
 
     if page.locator(".oxd-table-card", has_text=LEAVE_TYPE).count() == 0:
         add_btn = page.get_by_role("button", name="Add")
         if add_btn.is_visible():
             add_btn.click()
-            page.wait_for_load_state("networkidle")
             name_input = page.locator(".oxd-input-group").filter(
                 has=page.locator("label:has-text('Name')")
             ).locator("input")
@@ -214,7 +216,6 @@ def test_setup_03_ensure_leave_type(admin_page):
 def test_setup_04_add_entitlement(admin_page):
     page = admin_page
     page.goto(f"{BASE_URL}/web/index.php/leave/addLeaveEntitlement")
-    page.wait_for_load_state("networkidle")
 
     # 1. Search employee using the unique LAST name
     hint_box = page.get_by_placeholder("Type for hints...")
@@ -255,19 +256,19 @@ def test_setup_04_add_entitlement(admin_page):
     period_group = page.locator(".oxd-input-group").filter(
         has=page.locator("label", has_text=re.compile(r"Leave Period", re.I))
     )
-    if period_group.count() > 0:
-        period_box = period_group.locator(".oxd-select-text")
-        p_text = period_box.inner_text().strip()
-        if "-- Select --" in p_text or not p_text:
-            period_box.click()
-            page.locator(".oxd-select-dropdown").wait_for(state="visible")
-            p_opt = page.locator(".oxd-select-dropdown .oxd-select-option:not(:has-text('-- Select --'))").first
-            p_text = p_opt.inner_text().strip()
-            p_opt.click()
+    period_box = period_group.locator(".oxd-select-text")
+    expect(period_box).to_be_visible()
+    p_text = period_box.inner_text().strip()
+    if "-- Select --" in p_text or not p_text:
+        period_box.click()
+        page.locator(".oxd-select-dropdown").wait_for(state="visible")
+        p_opt = page.locator(".oxd-select-dropdown .oxd-select-option:not(:has-text('-- Select --'))").first
+        p_text = p_opt.inner_text().strip()
+        p_opt.click()
 
-        ym = re.search(r"(\d{4})", p_text)
-        if ym:
-            State.target_year = int(ym.group(1))
+    ym = re.search(r"(\d{4})", p_text)
+    if ym:
+        State.target_year = int(ym.group(1))
 
     # 4. Fill Entitlement amount
     ent_group = page.locator(".oxd-input-group").filter(
@@ -300,26 +301,17 @@ def test_step_01_employee_login(emp_page):
 def test_step_02_check_balance(emp_page):
     page = emp_page
     page.goto(f"{BASE_URL}/web/index.php/leave/viewMyLeaveEntitlements")
-    page.wait_for_load_state("networkidle")
 
-    if not page.locator(".oxd-table-body").is_visible():
-        page.goto(f"{BASE_URL}/web/index.php/leave/viewLeaveModule")
-        ent_tab = page.locator(".oxd-topbar-body-nav-tab", has_text="Entitlements")
-        if ent_tab.is_visible():
-            ent_tab.click()
-            page.get_by_text("My Entitlements", exact=True).click()
-            page.wait_for_load_state("networkidle")
-
-    expect(page.locator(".oxd-table-body")).to_be_visible()
-    body = page.locator(".oxd-table-body").inner_text()
-    assert State.leave_type in body and str(ENTITLEMENT) in body
+    table = page.locator(".oxd-table-body")
+    expect(table).to_be_visible()
+    expect(table).to_contain_text(State.leave_type)
+    expect(table).to_contain_text(str(ENTITLEMENT))
     shot(page, "01_balance")
 
 
 def test_step_03_to_06_apply_leave(emp_page):
     page = emp_page
     page.goto(f"{BASE_URL}/web/index.php/leave/applyLeave")
-    page.wait_for_load_state("networkidle")
 
     # Read placeholder directly from the visible input on the apply page
     date_box = page.locator(".oxd-date-input input").first
