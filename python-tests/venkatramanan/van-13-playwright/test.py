@@ -87,20 +87,20 @@ def set_dates(page, d):
 
 def apply_leave(page, d):
     page.goto(f"{BASE_URL}/web/index.php/leave/applyLeave")
-    page.wait_for_load_state("networkidle")
 
     # 1. Select Leave Type
-    page.locator(".oxd-select-text").first.click()
-    page.locator(".oxd-select-dropdown").wait_for(state="visible")
+    leave_select = page.locator(".oxd-select-text").first
+    leave_select.click()
 
     options = page.locator(".oxd-select-dropdown .oxd-select-option:not(:has-text('-- Select --'))")
-    matched = options.filter(has_text=re.compile(re.escape(State.leave_type), re.I))
-    if matched.count() > 0:
-        matched.first.click()
-    else:
-        options.first.click()
+    expect(options.first).to_be_visible()  # options are loaded before we count/filter
 
-    page.wait_for_load_state("networkidle")
+    matched = options.filter(has_text=re.compile(re.escape(State.leave_type), re.I))
+    chosen = matched.first if matched.count() > 0 else options.first
+    chosen_text = chosen.inner_text().strip()
+    chosen.click()
+
+    expect(leave_select).to_have_text(chosen_text)  # replaces networkidle
 
     # 2. Fill Dates and Reason
     set_dates(page, d)
@@ -108,7 +108,6 @@ def apply_leave(page, d):
 
     # 3. Click Apply
     page.locator("button[type='submit'], button:has-text('Apply')").first.click()
-
 
 def filter_my_leave(page, d=None):
     page.goto(f"{BASE_URL}/web/index.php/leave/viewMyLeaveList")
