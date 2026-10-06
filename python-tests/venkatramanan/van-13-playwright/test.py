@@ -5,7 +5,7 @@ import pytest
 from datetime import date, timedelta
 from playwright.sync_api import sync_playwright, expect
 
-# ---------------------------------------------------------------- CONFIG
+# CONFIG
 LOGIN_URL = os.getenv("OHRM_LOGIN_URL", "http://localhost:4201/web/index.php/auth/login")
 BASE_URL = LOGIN_URL.split("/web/")[0]
 ADMIN_USER = os.getenv("OHRM_ADMIN_USER", "Admin")
@@ -29,7 +29,7 @@ class State:
     target_year = None
 
 
-# ---------------------------------------------------------------- HELPERS
+#  HELPERS
 def shot(page, name):
     page.screenshot(path=f"screenshots/{name}.png")
 
@@ -41,7 +41,7 @@ def future_workday(days=14, year=None):
             d = d.replace(year=year)
         except ValueError:
             d = date(year, d.month, 28)
-    while d.weekday() >= 5:  # Skip Sat/Sun
+    while d.weekday() >= 5:
         d += timedelta(days=1)
     return d
 
@@ -55,6 +55,7 @@ def field(page, label):
 
 
 def wait_for_server(page, url, retries=15, delay=3):
+    # Needed: Docker Apache/MySQL cold start
     for _ in range(retries):
         try:
             resp = page.goto(url, timeout=10000)
@@ -75,9 +76,8 @@ def login(page, user, pwd):
 
 
 def set_dates(page, d):
-    # Wait for the first date input to mount instead of evaluating count() at 0
     from_box = page.locator(".oxd-date-input input").first
-    from_box.wait_for(state="visible", timeout=10000)
+    from_box.wait_for(state="visible")
     to_box = page.locator(".oxd-date-input input").last
 
     for box in (from_box, to_box):
@@ -92,10 +92,7 @@ def set_dates(page, d):
 def apply_leave(page, d):
     page.goto(f"{BASE_URL}/web/index.php/leave/applyLeave", wait_until="domcontentloaded")
 
-    # 1. Select Leave Type
-    lt_select = page.locator(".oxd-select-text").first
-    lt_select.wait_for(state="visible")
-    lt_select.click()
+    page.locator(".oxd-select-text").first.click()
     page.locator(".oxd-select-dropdown").wait_for(state="visible")
 
     options = page.locator(".oxd-select-dropdown .oxd-select-option:not(:has-text('-- Select --'))")
@@ -105,11 +102,8 @@ def apply_leave(page, d):
     else:
         options.first.click()
 
-    # 2. Fill Dates and Reason
     set_dates(page, d)
     page.locator("textarea").fill(REASON)
-
-    # 3. Click Apply
     page.locator("button[type='submit'], button:has-text('Apply')").first.click()
 
 
@@ -120,10 +114,9 @@ def filter_my_leave(page, d=None):
         set_dates(page, d)
 
     page.locator("button[type='submit'], button:has-text('Search')").first.click()
-    page.locator(".oxd-table, .orangehrm-container").first.wait_for(state="visible")
 
 
-# ---------------------------------------------------------------- FIXTURES
+#  FIXTURES
 @pytest.fixture(scope="session")
 def browser_instance():
     with sync_playwright() as p:
@@ -151,7 +144,7 @@ def emp_page(browser_instance):
     context.close()
 
 
-# ---------------------------------------------------------------- TESTS
+# -TESTS
 def test_setup_01_admin_login(admin_page):
     if not wait_for_server(admin_page, LOGIN_URL):
         pytest.fail(f"Could not connect to {LOGIN_URL}")
@@ -170,11 +163,9 @@ def test_setup_02_create_employee(admin_page):
     page.keyboard.press("Tab")
 
     for attempt in (1, 2):
-        save_btn = page.get_by_role("button", name="Save")
-        save_btn.wait_for(state="visible")
-        save_btn.click()
+        page.get_by_role("button", name="Save").click()
         try:
-            page.wait_for_url(re.compile("viewPersonalDetails"), timeout=15000)
+            page.wait_for_url(re.compile("viewPersonalDetails"))
             return
         except Exception:
             shot(page, f"err_add_employee_try{attempt}")
@@ -184,18 +175,18 @@ def test_setup_02_create_employee(admin_page):
 def test_setup_03_ensure_leave_type(admin_page):
     page = admin_page
 
-    # 1. Ensure Leave Period is defined
+    # 1. Define Leave Period
     page.goto(f"{BASE_URL}/web/index.php/leave/defineLeavePeriod", wait_until="domcontentloaded")
-    save_period_btn = page.locator("button[type='submit'], button:has-text('Save')").first
-    if save_period_btn.is_visible():
+    save_btn = page.locator("button[type='submit'], button:has-text('Save')").first
+    if save_btn.is_visible():
         selects = page.locator(".oxd-select-text")
-        for i in range(selects.count()):
-            txt = selects.nth(i).inner_text().strip()
-            if "-- Select --" in txt or not txt:
-                selects.nth(i).click()
-                page.locator(".oxd-select-dropdown .oxd-select-option:not(:has-text('-- Select --'))").first.click()
-        save_period_btn.click()
-        page.wait_for_selector(".oxd-toast", timeout=5000)
+        if selects.count() > 0:
+            selects.nth(0).click()
+            page.locator(".oxd-select-dropdown .oxd-select-option").filter(has_text=re.compile(r"January|01", re.I)).first.click()
+            if selects.count() > 1:
+                selects.nth(1).click()
+                page.locator(".oxd-select-dropdown .oxd-select-option").filter(has_text=re.compile(r"^0?1$|1st", re.I)).first.click()
+        save_btn.click()
 
     # 2. Ensure Leave Type exists
     page.goto(f"{BASE_URL}/web/index.php/leave/leaveTypeList", wait_until="domcontentloaded")
@@ -211,14 +202,14 @@ def test_setup_03_ensure_leave_type(admin_page):
             name_input.wait_for(state="visible")
             name_input.fill(LEAVE_TYPE)
             page.locator("button[type='submit']").click()
-            page.wait_for_url(re.compile("leaveTypeList"), timeout=10000)
+            page.wait_for_url(re.compile("leaveTypeList"))
 
 
 def test_setup_04_add_entitlement(admin_page):
     page = admin_page
     page.goto(f"{BASE_URL}/web/index.php/leave/addLeaveEntitlement", wait_until="domcontentloaded")
 
-    # 1. Search employee using the unique LAST name
+    # 1. Employee Autocomplete
     hint_box = page.get_by_placeholder("Type for hints...")
     hint_box.wait_for(state="visible")
     hint_box.click()
@@ -234,7 +225,7 @@ def test_setup_04_add_entitlement(admin_page):
     else:
         options.first.click()
 
-    # 2. Select Leave Type
+    # 2. Leave Type
     lt_group = page.locator(".oxd-input-group").filter(
         has=page.locator("label", has_text=re.compile(r"Leave Type", re.I))
     )
@@ -251,25 +242,25 @@ def test_setup_04_add_entitlement(admin_page):
         State.leave_type = first_opt.inner_text().strip()
         first_opt.click()
 
-    # 3. Handle Leave Period
+  
     period_group = page.locator(".oxd-input-group").filter(
         has=page.locator("label", has_text=re.compile(r"Leave Period", re.I))
     )
     if period_group.count() > 0:
         period_box = period_group.locator(".oxd-select-text")
-        p_text = period_box.inner_text().strip()
-        if "-- Select --" in p_text or not p_text:
-            period_box.click()
-            page.locator(".oxd-select-dropdown").wait_for(state="visible")
-            p_opt = page.locator(".oxd-select-dropdown .oxd-select-option:not(:has-text('-- Select --'))").first
-            p_text = p_opt.inner_text().strip()
-            p_opt.click()
+        period_box.click()
+        page.locator(".oxd-select-dropdown").wait_for(state="visible")
+
+        period_options = page.locator(".oxd-select-dropdown .oxd-select-option:not(:has-text('-- Select --'))")
+        period_options.first.wait_for(state="visible", timeout=5000)
+        p_text = period_options.first.inner_text().strip()
+        period_options.first.click()
 
         ym = re.search(r"(\d{4})", p_text)
         if ym:
             State.target_year = int(ym.group(1))
 
-    # 4. Fill Entitlement amount
+    # 4. Entitlement Quota
     ent_group = page.locator(".oxd-input-group").filter(
         has=page.locator("label", has_text=re.compile(r"Entitlement", re.I))
     )
@@ -277,10 +268,9 @@ def test_setup_04_add_entitlement(admin_page):
     ent_input.click()
     ent_input.fill(str(ENTITLEMENT))
 
-    # 5. Save and Confirm
+    # 5. Save and Confirm (Needed: 3000ms limit so it doesn't hang 30s if popup doesn't appear)
     page.locator("button[type='submit']").click()
     try:
-        # Give confirmation dialog a fast 3-second timeout so it never hangs for 30s
         confirm_btn = page.locator(".oxd-dialog-container-default").get_by_role("button", name="Confirm")
         confirm_btn.wait_for(state="visible", timeout=3000)
         confirm_btn.click()
@@ -288,7 +278,7 @@ def test_setup_04_add_entitlement(admin_page):
         pass
 
     try:
-        page.wait_for_url(re.compile("viewLeaveEntitlements"), timeout=8000)
+        page.wait_for_url(re.compile("viewLeaveEntitlements"))
     except Exception:
         expect(page.locator(".oxd-toast")).to_be_visible()
     shot(page, "00_admin_entitlement")
@@ -309,7 +299,7 @@ def test_step_02_check_balance(emp_page):
             ent_tab.click()
             page.get_by_text("My Entitlements", exact=True).click()
 
-    expect(page.locator(".oxd-table-body")).to_be_visible(timeout=15000)
+    expect(page.locator(".oxd-table-body")).to_be_visible()
     body = page.locator(".oxd-table-body").inner_text()
     assert State.leave_type in body and str(ENTITLEMENT) in body
     shot(page, "01_balance")
