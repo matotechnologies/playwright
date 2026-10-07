@@ -290,6 +290,6 @@ test.describe.serial('OrangeHRM - Setup + Employee leave flow', () => {
     if (await ok.isVisible()) await ok.click();
 
     await filterMyLeave(empPage, leaveDate, 'Pending Approval');
-    await expect(empPage.locator('.oxd-table-card', { hasText: leaveDate }).toHaveCount(1);
+    await expect(empPage.locator('.oxd-table-card', { hasText: leaveDate })).toHaveCount(1);
   });
 });
