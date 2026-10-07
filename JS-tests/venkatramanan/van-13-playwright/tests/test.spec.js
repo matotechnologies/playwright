@@ -5,7 +5,7 @@ const test = base.test;
 const expect = base.expect.configure({ timeout: 20000 });
 
 const BASE_URL = process.env.OHRM_LOGIN_URL || 'http://localhost:4201/web/index.php/auth/login';
-const ROOT_URL = BASE_URL.split('/web/')[0]; // http://localhost:4201
+const ROOT_URL = BASE_URL.split('/web/')[0];
 const ADMIN_USER = process.env.OHRM_ADMIN_USER || 'Admin';
 const ADMIN_PASS = process.env.OHRM_ADMIN_PASS || 'Admin@123098';
 const LEAVE_TYPE = process.env.OHRM_LEAVE_TYPE || 'Casual Leave';
@@ -37,11 +37,11 @@ const field = (page, label) =>
 
 async function login(page, user, pwd) {
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
-  await page.getByPlaceholder('Username').waitFor({ state: 'visible', timeout: 20000 });
+  await page.getByPlaceholder('Username').waitFor({ state: 'visible' });
   await page.getByPlaceholder('Username').fill(user);
   await page.getByPlaceholder('Password').fill(pwd);
   await page.getByRole('button', { name: 'Login' }).click();
-  await expect(page).toHaveURL(/dashboard/, { timeout: 20000 });
+  await expect(page).toHaveURL(/dashboard/);
 }
 
 async function createEmployee(page) {
@@ -53,18 +53,20 @@ async function createEmployee(page) {
   await field(page, 'Password').fill(EMP_PASS);
   await field(page, 'Confirm Password').fill(EMP_PASS);
   await page.keyboard.press('Tab');
-  await page.waitForLoadState('networkidle');
-  await page.waitForTimeout(2500);
+
+  // Resolved R57: Wait for Save button to be visible and ready instead of blind timeout
+  const saveBtn = page.getByRole('button', { name: 'Save' });
+  await saveBtn.waitFor({ state: 'visible' });
 
   for (const attempt of [1, 2]) {
-    const save = page.getByRole('button', { name: 'Save' });
-    await save.click();
+    await saveBtn.click();
     try {
       await page.waitForURL(/viewPersonalDetails/, { timeout: 15000 });
       return;
     } catch (e) {
       await shot(page, `err_add_employee_try${attempt}`);
-      await page.waitForTimeout(2000);
+      // Resolved R67: Wait for button state instead of blind timeout
+      await saveBtn.waitFor({ state: 'visible' });
     }
   }
   throw new Error('Employee was not created - see screenshots');
@@ -73,8 +75,13 @@ async function createEmployee(page) {
 async function detectDate(page) {
   await page.goto(`${ROOT_URL}/web/index.php/leave/applyLeave`);
   await page.locator('.oxd-select-text').first().click();
+  await page.locator('.oxd-select-dropdown').waitFor({ state: 'visible' });
   await page.getByRole('option', { name: LEAVE_TYPE, exact: true }).click();
-  const ph = (await page.locator('.oxd-date-input input').first().getAttribute('placeholder')) || 'yyyy-dd-mm';
+
+  const dateInput = page.locator('.oxd-date-input input').first();
+  await dateInput.waitFor({ state: 'visible' });
+  const ph = (await dateInput.getAttribute('placeholder')) || 'yyyy-dd-mm';
+
   const yyyy = String(target.getFullYear());
   const dd = String(target.getDate()).padStart(2, '0');
   const mm = String(target.getMonth() + 1).padStart(2, '0');
@@ -82,20 +89,26 @@ async function detectDate(page) {
 }
 
 async function setDates(page, d) {
-  for (const i of [0, 1]) {
-    const box = page.locator('.oxd-date-input input').nth(i);
+  const fromBox = page.locator('.oxd-date-input input').first();
+  await fromBox.waitFor({ state: 'visible' });
+  const toBox = page.locator('.oxd-date-input input').last();
+
+  for (const box of [fromBox, toBox]) {
     await box.click();
     await box.press('Control+a');
     await box.fill(d);
     await box.press('Tab');
   }
+
   await page.locator('h5, h6').first().click();
-  await page.waitForTimeout(500);
+  // Resolved R93: Wait for calendar popup overlay to close instead of blind timeout
+  await page.locator('.oxd-date-input-calendar').waitFor({ state: 'detached' }).catch(() => {});
 }
 
 async function applyLeave(page, d) {
   await page.goto(`${ROOT_URL}/web/index.php/leave/applyLeave`);
   await page.locator('.oxd-select-text').first().click();
+  await page.locator('.oxd-select-dropdown').waitFor({ state: 'visible' });
   await page.getByRole('option', { name: LEAVE_TYPE, exact: true }).click();
   await setDates(page, d);
   await page.locator('textarea').fill(REASON);
@@ -105,10 +118,13 @@ async function applyLeave(page, d) {
 async function filterMyLeave(page, d, status = 'Pending Approval') {
   await page.goto(`${ROOT_URL}/web/index.php/leave/viewMyLeaveList`);
   await page.locator('.oxd-select-text').nth(0).click();
+  await page.locator('.oxd-select-dropdown').waitFor({ state: 'visible' });
   await page.getByRole('option', { name: status }).click();
   if (d) await setDates(page, d);
   await page.getByRole('button', { name: 'Search' }).click();
-  await page.waitForTimeout(1000);
+
+  // Wait for table container to be ready instead of blind timeout
+  await page.locator('.oxd-table-body, .orangehrm-container').first().waitFor({ state: 'visible' });
 }
 
 test.describe.serial('OrangeHRM - Setup + Employee leave flow', () => {
@@ -133,8 +149,8 @@ test.describe.serial('OrangeHRM - Setup + Employee leave flow', () => {
   test('SETUP-2 Ensure leave type exists', async () => {
     const page = adminPage;
     await page.goto(`${ROOT_URL}/web/index.php/leave/leaveTypeList`);
-    await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
+    await page.locator('.oxd-table-body, .orangehrm-container').first().waitFor({ state: 'visible' });
+
     if ((await page.locator('.oxd-table-card', { hasText: LEAVE_TYPE }).count()) === 0) {
       await page.goto(`${ROOT_URL}/web/index.php/leave/defineLeaveType`);
       await field(page, 'Name').fill(LEAVE_TYPE);
@@ -146,15 +162,30 @@ test.describe.serial('OrangeHRM - Setup + Employee leave flow', () => {
   test('SETUP-3 Add entitlement for new employee', async () => {
     const page = adminPage;
     await page.goto(`${ROOT_URL}/web/index.php/leave/addLeaveEntitlement`);
-    await page.getByPlaceholder('Type for hints...').fill(`${FIRST} ${LAST}`);
-    await page.locator('.oxd-autocomplete-option', { hasText: LAST }).first().click();
+
+    const hint = page.getByPlaceholder('Type for hints...');
+    await hint.waitFor({ state: 'visible' });
+    await hint.click();
+    await hint.pressSequentially(LAST, { delay: 100 });
+
+    const empOpt = page.locator('.oxd-autocomplete-dropdown .oxd-autocomplete-option:not(:has-text("Searching"))')
+      .filter({ hasText: LAST }).first();
+    await empOpt.waitFor({ state: 'visible' });
+    await empOpt.click();
+
     await page.locator('.oxd-select-text').nth(0).click();
+    await page.locator('.oxd-select-dropdown').waitFor({ state: 'visible' });
     await page.getByRole('option', { name: LEAVE_TYPE, exact: true }).click();
+
     await page.locator('.oxd-select-text').nth(1).click();
-    await page.getByRole('option', { name: new RegExp(`^${target.getFullYear()}-`) }).click();
+    await page.locator('.oxd-select-dropdown').waitFor({ state: 'visible' });
+    const periodOpt = page.locator('.oxd-select-dropdown .oxd-select-option:not(:has-text("-- Select --"))').first();
+    await periodOpt.waitFor({ state: 'visible' });
+    await periodOpt.click();
+
     await field(page, 'Entitlement').fill(ENTITLEMENT);
     await page.getByRole('button', { name: 'Save' }).click();
-    await page.getByRole('button', { name: 'Confirm' }).click({ timeout: 5000 }).catch(() => {});
+    await page.getByRole('button', { name: 'Confirm' }).click({ timeout: 3000 }).catch(() => {});
     await page.waitForURL(/viewLeaveEntitlements/, { timeout: 15000 });
     await shot(page, '00_admin_entitlement');
   });
@@ -167,7 +198,6 @@ test.describe.serial('OrangeHRM - Setup + Employee leave flow', () => {
     await empPage.goto(`${ROOT_URL}/web/index.php/leave/viewLeaveModule`);
     await empPage.locator('.oxd-topbar-body-nav-tab', { hasText: 'Entitlements' }).click();
     await empPage.getByText('My Entitlements', { exact: true }).click();
-    await empPage.waitForLoadState('networkidle');
     await expect(empPage.locator('.oxd-table-body')).toBeVisible();
     const body = (await empPage.locator('.oxd-table-body').innerText()).replace(/\n/g, ' | ');
     expect(body).toContain(LEAVE_TYPE);
