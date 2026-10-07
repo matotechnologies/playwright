@@ -54,7 +54,7 @@ async function createEmployee(page) {
   await field(page, 'Confirm Password').fill(EMP_PASS);
   await page.keyboard.press('Tab');
 
-
+  // Resolved R57: wait for button state instead of waitForTimeout
   const saveBtn = page.getByRole('button', { name: 'Save' });
   await saveBtn.waitFor({ state: 'visible' });
 
@@ -162,7 +162,7 @@ test.describe.serial('OrangeHRM - Setup + Employee leave flow', () => {
   test('SETUP-2 Ensure leave type exists', async () => {
     const page = adminPage;
 
-    // 1. Initialize Leave Period first to unlock leave features
+    
     await page.goto(`${ROOT_URL}/web/index.php/leave/defineLeavePeriod`);
     const savePeriodBtn = page.locator('button[type="submit"], button:has-text("Save")').first();
     if (await savePeriodBtn.isVisible()) {
@@ -204,6 +204,7 @@ test.describe.serial('OrangeHRM - Setup + Employee leave flow', () => {
     const page = adminPage;
     await page.goto(`${ROOT_URL}/web/index.php/leave/addLeaveEntitlement`);
 
+    
     const hint = page.getByPlaceholder('Type for hints...');
     await hint.waitFor({ state: 'visible' });
     await hint.click();
@@ -214,7 +215,7 @@ test.describe.serial('OrangeHRM - Setup + Employee leave flow', () => {
     await empOpt.waitFor({ state: 'visible' });
     await empOpt.click();
 
-    // Select Leave Type
+    
     await page.locator('.oxd-select-text').nth(0).click();
     await page.locator('.oxd-select-dropdown').waitFor({ state: 'visible' });
     const ltOptions = page.locator('.oxd-select-dropdown .oxd-select-option:not(:has-text("-- Select --"))');
@@ -225,7 +226,7 @@ test.describe.serial('OrangeHRM - Setup + Employee leave flow', () => {
       await ltOptions.first().click();
     }
 
-  
+   
     await page.locator('.oxd-select-text').nth(1).click();
     await page.locator('.oxd-select-dropdown').waitFor({ state: 'visible' });
     const periodOpt = page.locator('.oxd-select-dropdown .oxd-select-option:not(:has-text("-- Select --"))').first();
